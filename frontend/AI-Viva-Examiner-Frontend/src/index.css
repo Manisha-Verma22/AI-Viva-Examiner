@@ -1,3 +1,50 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
-@tailwind base; @tailwind components; @tailwind utilities;
-:root{font-family:Outfit,sans-serif;color:#0b0b1a;background:#e6e8ff;font-synthesis:none;text-rendering:optimizeLegibility}*{box-sizing:border-box}html,body,#root{min-height:100%;margin:0}body{min-width:320px}button,input,textarea,select{font:inherit}button{cursor:pointer}:focus-visible{outline:3px solid #818cf8;outline-offset:3px}
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global styles */
+:root {
+  font-family: "Outfit", sans-serif;
+  color: #0b0b1a;
+  background: #e6e8ff;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+/* Box sizing */
+* {
+  box-sizing: border-box;
+}
+
+/* Page layout */
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-width: 320px;
+}
+
+/* Form elements */
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+/* Buttons */
+button {
+  cursor: pointer;
+}
+
+/* Keyboard accessibility */
+:focus-visible {
+  outline: 3px solid #818cf8;
+  outline-offset: 3px;
+}
