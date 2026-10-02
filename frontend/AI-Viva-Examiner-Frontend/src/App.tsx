@@ -32,6 +32,7 @@ import {
   MockUploadService,
 } from "./services";
 import type { VivaQuestion } from "./types";
+
 import StudentDashboard from "./StudentDashboard";
 
 function Logo() {
@@ -723,7 +724,7 @@ function Interview() {
           <Button
             onClick={() => {
               useViva.getState().reset();
-              navigate("/start");
+              navigate("/");
             }}
           >
             Back to home
@@ -878,10 +879,7 @@ export default function App() {
       transition={{ duration: 0.25 }}
     >
       <Routes>
-        {/* Student dashboard is the first page */}
         <Route path="/" element={<StudentDashboard />} />
-
-        {/* Existing viva workflow */}
         <Route path="/start" element={<Start />} />
 
         <Route
@@ -929,9 +927,9 @@ export default function App() {
           }
         />
 
-        {/* Redirect unknown routes to the dashboard */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </motion.div>
   );
 }
+
