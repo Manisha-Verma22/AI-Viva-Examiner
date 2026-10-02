@@ -4,21 +4,40 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global styles */
 :root {
+  --white: #ffffff;
+
+  --blue-50: #f4f9fd;
+  --blue-100: #eaf4fc;
+  --blue-200: #d5e9f8;
+  --blue-300: #a8d0f0;
+  --blue-400: #83b8e3;
+  --blue-500: #609fd5;
+
+  --ink: #000000;
+  --ink-soft: #1a1a1a;
+
+  --success: #1e8e3e;
+  --danger: #c62828;
+
+  --shadow-soft:
+    0 8px 24px rgba(60, 80, 110, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  --shadow-pressed: inset 0 2px 6px rgba(60, 80, 110, 0.18);
+
   font-family: "Outfit", sans-serif;
-  color: #0b0b1a;
-  background: #e6e8ff;
+  color: var(--ink);
+  background: var(--blue-100);
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
-/* Box sizing */
 * {
   box-sizing: border-box;
 }
 
-/* Page layout */
 html,
 body,
 #root {
@@ -28,23 +47,29 @@ body,
 
 body {
   min-width: 320px;
+  color: var(--ink);
+  background: var(--blue-100);
 }
 
-/* Form elements */
 button,
 input,
 textarea,
 select {
   font: inherit;
+  color: var(--ink);
 }
 
-/* Buttons */
 button {
   cursor: pointer;
 }
 
-/* Keyboard accessibility */
 :focus-visible {
-  outline: 3px solid #818cf8;
-  outline-offset: 3px;
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink);
+  opacity: 0.6;
 }
