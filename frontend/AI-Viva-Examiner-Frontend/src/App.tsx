@@ -32,6 +32,7 @@ import {
   MockUploadService,
 } from "./services";
 import type { VivaQuestion } from "./types";
+import StudentDashboard from "./StudentDashboard";
 
 function Logo() {
   return (
@@ -96,7 +97,9 @@ function Chips() {
       {topics.map((topic) => (
         <span key={topic.id}>{topic.name}</span>
       ))}
-      <span className="plain">• &nbsp;Custom questions defined for the exam</span>
+      <span className="plain">
+        • &nbsp;Custom questions defined for the exam
+      </span>
     </div>
   );
 }
@@ -173,7 +176,9 @@ function Start() {
             defaultCountry="IN"
             value={watch("phone")}
             onChange={(value) =>
-              setValue("phone", value ?? "", { shouldValidate: true })
+              setValue("phone", value ?? "", {
+                shouldValidate: true,
+              })
             }
             className="phone"
           />
@@ -254,7 +259,9 @@ function CameraCheck() {
         }
 
         const allDevices = await navigator.mediaDevices.enumerateDevices();
-        setDevices(allDevices.filter((device) => device.kind === "videoinput"));
+        setDevices(
+          allDevices.filter((device) => device.kind === "videoinput"),
+        );
         setError("");
       })
       .catch(() => {
@@ -350,7 +357,9 @@ function MicCheck() {
 
   useEffect(() => {
     void navigator.mediaDevices.enumerateDevices().then((allDevices) => {
-      setDevices(allDevices.filter((device) => device.kind === "audioinput"));
+      setDevices(
+        allDevices.filter((device) => device.kind === "audioinput"),
+      );
     });
   }, []);
 
@@ -471,7 +480,9 @@ function MicCheck() {
           <input
             type="checkbox"
             checked={consent}
-            onChange={(event) => set({ consent: event.target.checked })}
+            onChange={(event) =>
+              set({ consent: event.target.checked })
+            }
           />
           I agree to all <a href="#privacy">terms &amp; privacy policies</a>
         </label>
@@ -867,8 +878,12 @@ export default function App() {
       transition={{ duration: 0.25 }}
     >
       <Routes>
-        <Route path="/" element={<Navigate to="/start" replace />} />
+        {/* Student dashboard is the first page */}
+        <Route path="/" element={<StudentDashboard />} />
+
+        {/* Existing viva workflow */}
         <Route path="/start" element={<Start />} />
+
         <Route
           path="/instructions"
           element={
@@ -877,6 +892,7 @@ export default function App() {
             </Guard>
           }
         />
+
         <Route
           path="/camera"
           element={
@@ -885,6 +901,7 @@ export default function App() {
             </Guard>
           }
         />
+
         <Route
           path="/mic"
           element={
@@ -893,6 +910,7 @@ export default function App() {
             </Guard>
           }
         />
+
         <Route
           path="/share"
           element={
@@ -901,6 +919,7 @@ export default function App() {
             </Guard>
           }
         />
+
         <Route
           path="/interview"
           element={
@@ -909,7 +928,9 @@ export default function App() {
             </Guard>
           }
         />
-        <Route path="*" element={<Navigate to="/start" replace />} />
+
+        {/* Redirect unknown routes to the dashboard */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </motion.div>
   );
