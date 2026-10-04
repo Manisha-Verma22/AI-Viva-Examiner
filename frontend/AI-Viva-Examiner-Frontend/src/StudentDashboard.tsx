@@ -1,9 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactElement,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
   CalendarDays,
+  Camera,
   Check,
   ChevronDown,
   Clock3,
@@ -14,6 +21,7 @@ import {
   Mail,
   MessageSquare,
   Sparkles,
+  Trash2,
   Trophy,
   User,
 } from "lucide-react";
@@ -136,6 +144,25 @@ const titles: Record<Tab, string> = {
   profile: "My Profile",
 };
 
+const PHOTO_KEY = "elysian.student.photo";
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+
+function Avatar({
+  photo,
+  initial,
+  className,
+}: {
+  photo: string | null;
+  initial: string;
+  className: string;
+}) {
+  return (
+    <span className={`avatar ${className}`}>
+      {photo ? <img src={photo} alt="Profile" /> : initial}
+    </span>
+  );
+}
+
 function getGreeting() {
   const hour = new Date().getHours();
 
@@ -149,8 +176,17 @@ export default function StudentDashboard() {
 
   const [tab, setTab] = useState<Tab>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [photo, setPhoto] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(PHOTO_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [photoError, setPhotoError] = useState("");
 
   const menuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const initial = student.name.charAt(0).toUpperCase();
 
@@ -195,6 +231,55 @@ export default function StudentDashboard() {
   };
 
   const signOut = () => navigate("/");
+
+  const openPhotoPicker = () => fileInputRef.current?.click();
+
+  const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Please choose an image file (JPG, PNG or WebP).");
+      return;
+    }
+
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoError("Image must be smaller than 2 MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+
+      setPhoto(reader.result);
+      setPhotoError("");
+
+      try {
+        localStorage.setItem(PHOTO_KEY, reader.result);
+      } catch {
+        setPhotoError(
+          "Photo applied, but it could not be saved on this device.",
+        );
+      }
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const removePhoto = () => {
+    setPhoto(null);
+    setPhotoError("");
+
+    try {
+      localStorage.removeItem(PHOTO_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
 
   /* ------------------------- Sections ------------------------- */
 
@@ -460,14 +545,49 @@ export default function StudentDashboard() {
   const renderProfile = () => (
     <>
       <section className="dashboard-card profile-hero">
-        <div className="profile-avatar-lg">{initial}</div>
+        <div className="profile-photo-wrap">
+          <Avatar photo={photo} initial={initial} className="avatar-lg" />
 
-        <div>
+          <button
+            type="button"
+            className="profile-photo-edit"
+            aria-label="Change profile photo"
+            onClick={openPhotoPicker}
+          >
+            <Camera size={15} />
+          </button>
+        </div>
+
+        <div className="profile-hero-text">
           <h1>{student.name}</h1>
           <p>
             {student.institutionShort} · {student.departmentShort}
           </p>
           <span className="profile-role">Student</span>
+        </div>
+
+        <div className="profile-hero-actions">
+          <div className="profile-photo-actions">
+            <button type="button" onClick={openPhotoPicker}>
+              <Camera size={14} />
+              {photo ? "Change photo" : "Upload photo"}
+            </button>
+
+            {photo && (
+              <button
+                type="button"
+                className="muted"
+                onClick={removePhoto}
+              >
+                <Trash2 size={14} />
+                Remove
+              </button>
+            )}
+          </div>
+
+          {photoError && (
+            <p className="profile-photo-error">{photoError}</p>
+          )}
         </div>
       </section>
 
@@ -524,7 +644,7 @@ export default function StudentDashboard() {
     </>
   );
 
-  const content: Record<Tab, () => JSX.Element> = {
+  const content: Record<Tab, () => ReactElement> = {
     dashboard: renderDashboard,
     vivas: renderVivas,
     performance: renderPerformance,
@@ -537,6 +657,16 @@ export default function StudentDashboard() {
 
   return (
     <div className="dashboard">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="visually-hidden"
+        onChange={handlePhotoChange}
+        tabIndex={-1}
+        aria-hidden="true"
+      />
+
       <aside className="dashboard-sidebar">
         <button
           type="button"
@@ -588,75 +718,123 @@ export default function StudentDashboard() {
       <main className="dashboard-main">
         <div className="dashboard-inner">
           <header className="dashboard-header">
-            <div>
-              <p className="dashboard-eyebrow">Student Workspace</p>
-              <h2 className="dashboard-title">{titles[tab]}</h2>
-            </div>
+            <h2 className="dashboard-title">{titles[tab]}</h2>
 
             <div className="profile-menu" ref={menuRef}>
               <button
                 type="button"
-                className={`profile-trigger ${
-                  menuOpen ? "open" : ""
-                }`}
-                aria-haspopup="menu"
+                className={`profile-trigger ${menuOpen ? "open" : ""}`}
+                aria-haspopup="dialog"
                 aria-expanded={menuOpen}
+                aria-label="Open student profile"
                 onClick={() => setMenuOpen((open) => !open)}
               >
-                <span className="profile-avatar">{initial}</span>
+                <Avatar
+                  photo={photo}
+                  initial={initial}
+                  className="avatar-sm"
+                />
 
-                <span className="profile-trigger-text">
-                  <strong>{student.name}</strong>
-                  <small>
-                    {student.institutionShort} ·{" "}
-                    {student.departmentShort}
-                  </small>
+                <span className="profile-trigger-name">
+                  {student.name}
+                  <ChevronDown size={14} />
                 </span>
 
-                <ChevronDown size={16} className="profile-chevron" />
+                <small>
+                  {student.institutionShort} · {student.departmentShort}
+                </small>
               </button>
 
               {menuOpen && (
-                <div className="profile-popover" role="menu">
-                  <div className="profile-popover-card">
-                    <span className="profile-avatar profile-avatar-md">
-                      {initial}
-                    </span>
+                <div
+                  className="profile-popover"
+                  role="dialog"
+                  aria-label="Student profile"
+                >
+                  <div className="profile-popover-top">
+                    <div className="profile-photo-wrap">
+                      <Avatar
+                        photo={photo}
+                        initial={initial}
+                        className="avatar-md"
+                      />
+
+                      <button
+                        type="button"
+                        className="profile-photo-edit"
+                        aria-label="Change profile photo"
+                        onClick={openPhotoPicker}
+                      >
+                        <Camera size={14} />
+                      </button>
+                    </div>
+
+                    <strong>{student.name}</strong>
+
+                    <small>
+                      <Mail size={12} />
+                      {student.email}
+                    </small>
+
+                    <div className="profile-photo-actions">
+                      <button type="button" onClick={openPhotoPicker}>
+                        <Camera size={14} />
+                        {photo ? "Change photo" : "Upload photo"}
+                      </button>
+
+                      {photo && (
+                        <button
+                          type="button"
+                          className="muted"
+                          onClick={removePhoto}
+                        >
+                          <Trash2 size={14} />
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    {photoError && (
+                      <p className="profile-photo-error">{photoError}</p>
+                    )}
+                  </div>
+
+                  <dl className="profile-info">
+                    <div>
+                      <dt>Institution</dt>
+                      <dd>{student.institution}</dd>
+                    </div>
 
                     <div>
-                      <strong>{student.name}</strong>
-                      <small>
-                        <Mail size={12} />
-                        {student.email}
-                      </small>
+                      <dt>Department</dt>
+                      <dd>{student.department}</dd>
                     </div>
+
+                    <div>
+                      <dt>Role</dt>
+                      <dd>Student</dd>
+                    </div>
+                  </dl>
+
+                  <div className="profile-popover-actions">
+                    <button
+                      type="button"
+                      className="profile-menu-item"
+                      onClick={() => goTo("profile")}
+                    >
+                      <User size={17} />
+                      View full profile
+                    </button>
+
+                    <button
+                      type="button"
+                      className="profile-menu-item danger"
+                      onClick={signOut}
+                    >
+                      <LogOut size={17} />
+                      Sign out
+                    </button>
                   </div>
-
-                  <div className="profile-chips">
-                    <span>{student.institutionShort}</span>
-                    <span>{student.departmentShort}</span>
-                    <span>Student</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="profile-menu-item"
-                    onClick={() => goTo("profile")}
-                  >
-                    <User size={17} />
-                    View my profile
-                  </button>
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="profile-menu-item danger"
-                    onClick={signOut}
-                  >
-                    <LogOut size={17} />
-                    Sign out
-                  </button>
                 </div>
               )}
             </div>
