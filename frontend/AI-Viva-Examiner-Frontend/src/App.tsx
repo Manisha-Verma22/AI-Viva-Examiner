@@ -33,10 +33,13 @@ import {
 } from "./services";
 
 import StudentDashboard from "./StudentDashboard";
+import TeacherDashboard from "./TeacherDashboard";
+import AdminDashboard from "./AdminDashboard";
 import Welcome from "./Welcome";
 import InstitutionSelect from "./InstitutionSelect";
 import Auth from "./Auth";
 import Register from "./Register";
+import TeacherRegister from "./TeacherRegister";
 import InstitutionRegister from "./InstitutionRegister";
 
 function Logo() {
@@ -1204,6 +1207,15 @@ export default function App() {
         />
 
         {/* =========================
+            TEACHER REGISTER
+        ========================== */}
+
+        <Route
+          path="/register/teacher"
+          element={<TeacherRegister />}
+        />
+
+        {/* =========================
             INSTITUTION REGISTRATION
         ========================== */}
 
@@ -1222,6 +1234,28 @@ export default function App() {
           path="/student"
           element={
             <StudentDashboard />
+          }
+        />
+
+        {/* =========================
+            TEACHER DASHBOARD
+        ========================== */}
+
+        <Route
+          path="/teacher"
+          element={
+            <TeacherDashboard />
+          }
+        />
+
+        {/* =========================
+            ADMIN DASHBOARD
+        ========================== */}
+
+        <Route
+          path="/admin"
+          element={
+            <AdminDashboard />
           }
         />
 

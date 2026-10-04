@@ -78,14 +78,13 @@ export default function Auth({ role }: { role: Role }) {
       Institution-specific database
     */
 
-    if (role === "student") {
-      navigate("/student");
-      return;
-    }
+    const destinations: Record<Role, string> = {
+      student: "/student",
+      teacher: "/teacher",
+      admin: "/admin",
+    };
 
-    setError(
-      `${data.label} authentication is currently in prototype mode.`,
-    );
+    navigate(destinations[role]);
   };
 
   return (
@@ -233,7 +232,11 @@ export default function Auth({ role }: { role: Role }) {
 
               <button
                 type="button"
-                onClick={() => navigate("/register")}
+                onClick={() =>
+                  navigate(
+                    role === "teacher" ? "/register/teacher" : "/register",
+                  )
+                }
               >
                 Create account
                 <ArrowRight size={15} />
