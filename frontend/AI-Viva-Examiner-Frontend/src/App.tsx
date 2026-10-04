@@ -31,9 +31,13 @@ import {
   MockProctorService,
   MockUploadService,
 } from "./services";
-import type { VivaQuestion } from "./types";
 
 import StudentDashboard from "./StudentDashboard";
+import Welcome from "./Welcome";
+import InstitutionSelect from "./InstitutionSelect";
+import Auth from "./Auth";
+import Register from "./Register";
+import InstitutionRegister from "./InstitutionRegister";
 
 function Logo() {
   return (
@@ -98,6 +102,7 @@ function Chips() {
       {topics.map((topic) => (
         <span key={topic.id}>{topic.name}</span>
       ))}
+
       <span className="plain">
         • &nbsp;Custom questions defined for the exam
       </span>
@@ -140,7 +145,11 @@ function Start() {
   });
 
   const onSubmit = (values: Form) => {
-    set({ candidate: values, step: 1 });
+    set({
+      candidate: values,
+      step: 1,
+    });
+
     navigate("/instructions");
   };
 
@@ -151,13 +160,21 @@ function Start() {
         <Progress n={1} />
       </header>
 
-      <form className="details-form" onSubmit={handleSubmit(onSubmit)}>
+      <form
+        className="details-form"
+        onSubmit={handleSubmit(onSubmit)}
+      >
         <h1>Please enter your details</h1>
 
         <label>
           Name
-          <input {...register("name")} placeholder="Your full name" />
-          {errors.name && <small>{errors.name.message}</small>}
+          <input
+            {...register("name")}
+            placeholder="Your full name"
+          />
+          {errors.name && (
+            <small>{errors.name.message}</small>
+          )}
         </label>
 
         <label>
@@ -167,11 +184,14 @@ function Start() {
             {...register("email")}
             placeholder="you@example.com"
           />
-          {errors.email && <small>{errors.email.message}</small>}
+          {errors.email && (
+            <small>{errors.email.message}</small>
+          )}
         </label>
 
         <label>
           Phone Number
+
           <PhoneInput
             international
             defaultCountry="IN"
@@ -183,7 +203,10 @@ function Start() {
             }
             className="phone"
           />
-          {errors.phone && <small>{errors.phone.message}</small>}
+
+          {errors.phone && (
+            <small>{errors.phone.message}</small>
+          )}
         </label>
 
         <Button type="submit" disabled={!isValid}>
@@ -205,10 +228,11 @@ function Instructions() {
 
         <p>
           Please note that this interview will take{" "}
-          <b>~{config.durationMinutes} minutes</b>, with each question having
-          a limited time for a response. You will answer by speaking or
-          typing. Ensure you're in a quiet spot with a stable internet
-          connection. This interview will be recorded and available in your
+          <b>~{config.durationMinutes} minutes</b>, with each
+          question having a limited time for a response. You
+          will answer by speaking or typing. Ensure you're in a
+          quiet spot with a stable internet connection. This
+          interview will be recorded and available in your
           profile link.
         </p>
 
@@ -242,6 +266,7 @@ function CameraCheck() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const [error, setError] = useState("");
+
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -249,20 +274,30 @@ function CameraCheck() {
 
     void navigator.mediaDevices
       .getUserMedia({
-        video: deviceId ? { deviceId: { exact: deviceId } } : true,
+        video: deviceId
+          ? { deviceId: { exact: deviceId } }
+          : true,
       })
       .then(async (mediaStream) => {
         liveStream = mediaStream;
-        set({ camera: mediaStream });
+
+        set({
+          camera: mediaStream,
+        });
 
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
         }
 
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
+        const allDevices =
+          await navigator.mediaDevices.enumerateDevices();
+
         setDevices(
-          allDevices.filter((device) => device.kind === "videoinput"),
+          allDevices.filter(
+            (device) => device.kind === "videoinput",
+          ),
         );
+
         setError("");
       })
       .catch(() => {
@@ -273,7 +308,9 @@ function CameraCheck() {
 
     return () => {
       if (liveStream) {
-        liveStream.getTracks().forEach((track) => track.stop());
+        liveStream
+          .getTracks()
+          .forEach((track) => track.stop());
       }
     };
   }, [deviceId, set]);
@@ -293,30 +330,45 @@ function CameraCheck() {
 
       <section className="device-content">
         <h1>Check your camera</h1>
+
         <p>
-          Your camera will record the interview for assessment and proctoring.
-          Please be ready to appear on video in a professional setting.
+          Your camera will record the interview for assessment
+          and proctoring. Please be ready to appear on video in a
+          professional setting.
         </p>
 
         <div className="select">
           <Camera />
+
           <select
             value={deviceId}
-            onChange={(event) => setDeviceId(event.target.value)}
+            onChange={(event) =>
+              setDeviceId(event.target.value)
+            }
           >
             <option value="">Default camera</option>
+
             {devices.map((device, index) => (
-              <option key={device.deviceId} value={device.deviceId}>
+              <option
+                key={device.deviceId}
+                value={device.deviceId}
+              >
                 {device.label || `Camera ${index + 1}`}
               </option>
             ))}
           </select>
+
           <ChevronDown />
         </div>
 
         <div className="preview">
           {stream ? (
-            <video ref={videoRef} autoPlay muted playsInline />
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+            />
           ) : (
             <span>
               <Camera /> Camera preview
@@ -324,7 +376,9 @@ function CameraCheck() {
           )}
         </div>
 
-        {error && <small className="error">{error}</small>}
+        {error && (
+          <small className="error">{error}</small>
+        )}
 
         <Button
           disabled={!stream}
@@ -337,8 +391,8 @@ function CameraCheck() {
         </Button>
 
         <small className="footnote">
-          Note: Screen sharing is required. Please share your entire screen to
-          continue.
+          Note: Screen sharing is required. Please share your
+          entire screen to continue.
         </small>
       </section>
     </main>
@@ -357,11 +411,15 @@ function MicCheck() {
   const [capturing, setCapturing] = useState(false);
 
   useEffect(() => {
-    void navigator.mediaDevices.enumerateDevices().then((allDevices) => {
-      setDevices(
-        allDevices.filter((device) => device.kind === "audioinput"),
-      );
-    });
+    void navigator.mediaDevices
+      .enumerateDevices()
+      .then((allDevices) => {
+        setDevices(
+          allDevices.filter(
+            (device) => device.kind === "audioinput",
+          ),
+        );
+      });
   }, []);
 
   useEffect(() => {
@@ -371,14 +429,19 @@ function MicCheck() {
 
     void navigator.mediaDevices
       .getUserMedia({
-        audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+        audio: deviceId
+          ? { deviceId: { exact: deviceId } }
+          : true,
       })
       .then((mediaStream) => {
         stream = mediaStream;
         audioContext = new AudioContext();
 
         const analyser = audioContext.createAnalyser();
-        audioContext.createMediaStreamSource(mediaStream).connect(analyser);
+
+        audioContext
+          .createMediaStreamSource(mediaStream)
+          .connect(analyser);
 
         const data = new Uint8Array(analyser.fftSize);
 
@@ -386,13 +449,21 @@ function MicCheck() {
           analyser.getByteTimeDomainData(data);
 
           let sum = 0;
+
           for (const value of data) {
             const normalized = (value - 128) / 128;
             sum += normalized * normalized;
           }
 
-          setLevel(Math.min(1, Math.sqrt(sum / data.length) * 5));
-          animationFrame = requestAnimationFrame(updateLevel);
+          setLevel(
+            Math.min(
+              1,
+              Math.sqrt(sum / data.length) * 5,
+            ),
+          );
+
+          animationFrame =
+            requestAnimationFrame(updateLevel);
         };
 
         updateLevel();
@@ -401,7 +472,11 @@ function MicCheck() {
 
     return () => {
       cancelAnimationFrame(animationFrame);
-      stream?.getTracks().forEach((track) => track.stop());
+
+      stream
+        ?.getTracks()
+        .forEach((track) => track.stop());
+
       void audioContext?.close();
     };
   }, [deviceId]);
@@ -425,29 +500,42 @@ function MicCheck() {
 
       <section className="device-content">
         <h1>Test your mic</h1>
+
         <p>
-          Let's make sure your mic is working. Please follow the steps below
-          to test it.
+          Let's make sure your mic is working. Please follow the
+          steps below to test it.
         </p>
 
         <div className="select">
           <Mic />
+
           <select
             value={deviceId}
-            onChange={(event) => setDeviceId(event.target.value)}
+            onChange={(event) =>
+              setDeviceId(event.target.value)
+            }
           >
             <option value="">Default microphone</option>
+
             {devices.map((device, index) => (
-              <option key={device.deviceId} value={device.deviceId}>
+              <option
+                key={device.deviceId}
+                value={device.deviceId}
+              >
                 {device.label || `Microphone ${index + 1}`}
               </option>
             ))}
           </select>
+
           <ChevronDown />
         </div>
 
         <div className="mic-card">
-          <b>Click the 'Speak' button and read the line below out loud.</b>
+          <b>
+            Click the 'Speak' button and read the line below out
+            loud.
+          </b>
+
           <div className="sentence">
             Testing. Do you hear me, ELYSIAN?
           </div>
@@ -456,8 +544,12 @@ function MicCheck() {
             {Array.from({ length: 17 }, (_, index) => (
               <i
                 key={index}
-                className={level * 17 > index ? "on" : ""}
-                style={{ height: 10 + (index % 5) * 4 }}
+                className={
+                  level * 17 > index ? "on" : ""
+                }
+                style={{
+                  height: 10 + (index % 5) * 4,
+                }}
               />
             ))}
           </div>
@@ -482,10 +574,16 @@ function MicCheck() {
             type="checkbox"
             checked={consent}
             onChange={(event) =>
-              set({ consent: event.target.checked })
+              set({
+                consent: event.target.checked,
+              })
             }
           />
-          I agree to all <a href="#privacy">terms &amp; privacy policies</a>
+
+          I agree to all{" "}
+          <a href="#privacy">
+            terms &amp; privacy policies
+          </a>
         </label>
 
         <Button
@@ -507,30 +605,48 @@ function Share() {
   const navigate = useNavigate();
   const set = useViva((state) => state.set);
   const camera = useViva((state) => state.camera);
+
   const [error, setError] = useState("");
 
   const shareScreen = async () => {
     setError("");
 
     try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { displaySurface: "monitor" },
-        audio: false,
-      });
+      const screenStream =
+        await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            displaySurface: "monitor",
+          },
+          audio: false,
+        });
 
       if (
-        screenStream.getVideoTracks()[0].getSettings().displaySurface !==
-        "monitor"
+        screenStream
+          .getVideoTracks()[0]
+          .getSettings()
+          .displaySurface !== "monitor"
       ) {
-        screenStream.getTracks().forEach((track) => track.stop());
-        setError("Please share your ENTIRE screen, not a tab or window.");
+        screenStream
+          .getTracks()
+          .forEach((track) => track.stop());
+
+        setError(
+          "Please share your ENTIRE screen, not a tab or window.",
+        );
+
         return;
       }
 
-      set({ screen: screenStream, step: 4 });
+      set({
+        screen: screenStream,
+        step: 4,
+      });
+
       navigate("/interview");
     } catch {
-      setError("Screen sharing was cancelled. Please try again.");
+      setError(
+        "Screen sharing was cancelled. Please try again.",
+      );
     }
   };
 
@@ -543,7 +659,10 @@ function Share() {
       <section className="share-content">
         <div>
           <h1>Share your entire screen</h1>
-          <p>Screen sharing is required for this mock viva.</p>
+
+          <p>
+            Screen sharing is required for this mock viva.
+          </p>
 
           <div className="preview">
             {camera ? (
@@ -566,19 +685,36 @@ function Share() {
             Choose screen to share
           </Button>
 
-          {error && <small className="error">{error}</small>}
+          {error && (
+            <small className="error">{error}</small>
+          )}
         </div>
 
         <aside>
           <h3>
             <ShieldCheck /> Before you begin
           </h3>
+
           <ol>
-            <li>Your session may be recorded for assessment.</li>
-            <li>The mock session includes proctoring event logging.</li>
-            <li>Stay on this tab and avoid external tools or AI assistants.</li>
-            <li>You may ask for clarification by repeating the question aloud.</li>
-            <li>A long pause can indicate you have finished answering.</li>
+            <li>
+              Your session may be recorded for assessment.
+            </li>
+            <li>
+              The mock session includes proctoring event
+              logging.
+            </li>
+            <li>
+              Stay on this tab and avoid external tools or AI
+              assistants.
+            </li>
+            <li>
+              You may ask for clarification by repeating the
+              question aloud.
+            </li>
+            <li>
+              A long pause can indicate you have finished
+              answering.
+            </li>
           </ol>
         </aside>
       </section>
@@ -595,19 +731,27 @@ function Interview() {
   const set = useViva((state) => state.set);
   const answered = useViva((state) => state.answered);
 
-  const [seconds, setSeconds] = useState(config.durationMinutes * 60);
+  const [seconds, setSeconds] = useState(
+    config.durationMinutes * 60,
+  );
+
   const [answerText, setAnswerText] = useState("");
   const [busy, setBusy] = useState(false);
   const [ended, setEnded] = useState(false);
   const [toast, setToast] = useState("");
 
-  const [service] = useState(() => new MockInterviewService());
+  const [service] = useState(
+    () => new MockInterviewService(),
+  );
+
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!question) {
       void service.start().then((nextQuestion) => {
-        set({ question: nextQuestion });
+        set({
+          question: nextQuestion,
+        });
       });
     }
   }, [question, service, set]);
@@ -620,7 +764,9 @@ function Interview() {
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      setSeconds((current) => Math.max(0, current - 1));
+      setSeconds((current) =>
+        Math.max(0, current - 1),
+      );
     }, 1000);
 
     return () => window.clearInterval(intervalId);
@@ -629,7 +775,10 @@ function Interview() {
   useEffect(() => {
     if (screen) {
       screen.getVideoTracks()[0].onended = () => {
-        setToast("Screen sharing stopped. Please restart the session.");
+        setToast(
+          "Screen sharing stopped. Please restart the session.",
+        );
+
         setEnded(true);
       };
     }
@@ -653,7 +802,11 @@ function Interview() {
       logEvent("window.blur");
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+
     window.addEventListener("blur", handleWindowBlur);
 
     return () => {
@@ -661,19 +814,29 @@ function Interview() {
         "visibilitychange",
         handleVisibilityChange,
       );
-      window.removeEventListener("blur", handleWindowBlur);
+
+      window.removeEventListener(
+        "blur",
+        handleWindowBlur,
+      );
     };
   }, []);
 
   const finishInterview = async () => {
     setEnded(true);
+
     await service.end();
 
     const uploadService = new MockUploadService();
     void uploadService;
 
-    camera?.getTracks().forEach((track) => track.stop());
-    screen?.getTracks().forEach((track) => track.stop());
+    camera
+      ?.getTracks()
+      .forEach((track) => track.stop());
+
+    screen
+      ?.getTracks()
+      .forEach((track) => track.stop());
   };
 
   useEffect(() => {
@@ -683,18 +846,23 @@ function Interview() {
   }, [seconds, ended]);
 
   const submitAnswer = async () => {
-    if (!question || !answerText.trim() || busy) {
+    if (
+      !question ||
+      !answerText.trim() ||
+      busy
+    ) {
       return;
     }
 
     setBusy(true);
     setToast("ELYSIAN is thinking...");
 
-    const nextQuestion = await service.submitAnswer({
-      questionId: question.id,
-      mode: "type",
-      text: answerText,
-    });
+    const nextQuestion =
+      await service.submitAnswer({
+        questionId: question.id,
+        mode: "type",
+        text: answerText,
+      });
 
     set({
       question: nextQuestion,
@@ -714,20 +882,30 @@ function Interview() {
     return (
       <main className="complete">
         <Logo />
+
         <section>
           <div className="checkmark">✓</div>
-          <h1>Thank you, your viva is complete</h1>
-          <p>You answered {answered} questions.</p>
-          <p className="muted">
-            Your recording will be available in your profile link.
+
+          <h1>
+            Thank you, your viva is complete
+          </h1>
+
+          <p>
+            You answered {answered} questions.
           </p>
+
+          <p className="muted">
+            Your recording will be available in your
+            profile link.
+          </p>
+
           <Button
             onClick={() => {
               useViva.getState().reset();
-              navigate("/");
+              navigate("/student");
             }}
           >
-            Back to home
+            Back to dashboard
           </Button>
         </section>
       </main>
@@ -735,13 +913,15 @@ function Interview() {
   }
 
   const activeTopicId =
-    question?.topicId ?? config.topics[0]?.id;
+    question?.topicId ??
+    config.topics[0]?.id;
 
   return (
     <main className="interview">
       <header>
         <div>
           <Logo />
+
           <small className="recording">
             <i /> Recording
           </small>
@@ -749,7 +929,11 @@ function Interview() {
 
         <div className="timer">
           <Clock3 />
-          {String(Math.floor(seconds / 60)).padStart(2, "0")}:
+
+          {String(
+            Math.floor(seconds / 60),
+          ).padStart(2, "0")}
+          :
           {String(seconds % 60).padStart(2, "0")}
         </div>
       </header>
@@ -757,7 +941,11 @@ function Interview() {
       <nav className="tabs">
         {config.topics.map((topic) => (
           <div
-            className={activeTopicId === topic.id ? "selected" : ""}
+            className={
+              activeTopicId === topic.id
+                ? "selected"
+                : ""
+            }
             key={topic.id}
           >
             {topic.name}
@@ -774,12 +962,22 @@ function Interview() {
         </div>
 
         <div className="question">
-          <small>ELYSIAN · AI EXAMINER</small>
-          <p>{question?.text ?? "Preparing your first question..."}</p>
+          <small>
+            ELYSIAN · AI EXAMINER
+          </small>
+
+          <p>
+            {question?.text ??
+              "Preparing your first question..."}
+          </p>
+
           <div className="answer-bar">
             <i />
           </div>
-          <small>Take your time and explain your reasoning.</small>
+
+          <small>
+            Take your time and explain your reasoning.
+          </small>
         </div>
       </section>
 
@@ -787,29 +985,46 @@ function Interview() {
         <div className="self-preview">
           <div className="preview">
             {camera ? (
-              <video ref={videoRef} autoPlay muted playsInline />
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+              />
             ) : (
-              <span>Camera preview</span>
+              <span>
+                Camera preview
+              </span>
             )}
           </div>
         </div>
 
         <div className="answer-box">
           <div className="answer-title">
-            Answer by typing <span>Mock session</span>
+            Answer by typing{" "}
+            <span>Mock session</span>
           </div>
 
           <textarea
             value={answerText}
-            onChange={(event) => setAnswerText(event.target.value)}
+            onChange={(event) =>
+              setAnswerText(event.target.value)
+            }
             placeholder="Type your answer here..."
           />
 
           <Button
-            disabled={!answerText.trim() || busy}
-            onClick={() => void submitAnswer()}
+            disabled={
+              !answerText.trim() ||
+              busy
+            }
+            onClick={() =>
+              void submitAnswer()
+            }
           >
-            {busy ? "Thinking..." : "Submit answer"}
+            {busy
+              ? "Thinking..."
+              : "Submit answer"}
           </Button>
 
           <div className="actions">
@@ -825,7 +1040,9 @@ function Interview() {
 
             <button
               onClick={() =>
-                setToast("You can ask ELYSIAN to clarify the question.")
+                setToast(
+                  "You can ask ELYSIAN to clarify the question.",
+                )
               }
             >
               <MessageCircle /> I need clarification
@@ -834,7 +1051,11 @@ function Interview() {
             <button
               className="end"
               onClick={() => {
-                if (window.confirm("End this viva now?")) {
+                if (
+                  window.confirm(
+                    "End this viva now?",
+                  )
+                ) {
                   void finishInterview();
                 }
               }}
@@ -848,7 +1069,12 @@ function Interview() {
       {toast && (
         <div className="toast">
           {toast}
-          <button onClick={() => setToast("")}>×</button>
+
+          <button
+            onClick={() => setToast("")}
+          >
+            ×
+          </button>
         </div>
       )}
     </main>
@@ -862,25 +1088,151 @@ function Guard({
   min: number;
   children: React.ReactNode;
 }) {
-  const currentStep = useViva((state) => state.step);
+  const currentStep = useViva(
+    (state) => state.step,
+  );
 
   return currentStep >= min ? (
     <>{children}</>
   ) : (
-    <Navigate to="/start" replace />
+    <Navigate
+      to="/start"
+      replace
+    />
   );
 }
 
 export default function App() {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
+      initial={{
+        opacity: 0,
+        y: 8,
+      }}
+      animate={{
+        opacity: 1,
+        y: 0,
+      }}
+      transition={{
+        duration: 0.25,
+      }}
     >
       <Routes>
-        <Route path="/" element={<StudentDashboard />} />
-        <Route path="/start" element={<Start />} />
+
+        {/* =========================
+            ELYSIAN ENTRY
+        ========================== */}
+
+        <Route
+          path="/"
+          element={<Welcome />}
+        />
+
+        {/* =========================
+            STUDENT ENTRY
+        ========================== */}
+
+        <Route
+          path="/login/student"
+          element={
+            <InstitutionSelect
+              role="student"
+            />
+          }
+        />
+
+        <Route
+          path="/auth/student/:institutionId"
+          element={
+            <Auth
+              role="student"
+            />
+          }
+        />
+
+        {/* =========================
+            TEACHER ENTRY
+        ========================== */}
+
+        <Route
+          path="/login/teacher"
+          element={
+            <InstitutionSelect
+              role="teacher"
+            />
+          }
+        />
+
+        <Route
+          path="/auth/teacher/:institutionId"
+          element={
+            <Auth
+              role="teacher"
+            />
+          }
+        />
+
+        {/* =========================
+            ADMIN ENTRY
+        ========================== */}
+
+        <Route
+          path="/login/admin"
+          element={
+            <InstitutionSelect
+              role="admin"
+            />
+          }
+        />
+
+        <Route
+          path="/auth/admin/:institutionId"
+          element={
+            <Auth
+              role="admin"
+            />
+          }
+        />
+
+        {/* =========================
+            STUDENT / USER REGISTER
+        ========================== */}
+
+        <Route
+          path="/register"
+          element={<Register />}
+        />
+
+        {/* =========================
+            INSTITUTION REGISTRATION
+        ========================== */}
+
+        <Route
+          path="/register/institution"
+          element={
+            <InstitutionRegister />
+          }
+        />
+
+        {/* =========================
+            STUDENT DASHBOARD
+        ========================== */}
+
+        <Route
+          path="/student"
+          element={
+            <StudentDashboard />
+          }
+        />
+
+        {/* =========================
+            VIVA FLOW
+        ========================== */}
+
+        <Route
+          path="/start"
+          element={<Start />}
+        />
 
         <Route
           path="/instructions"
@@ -927,9 +1279,21 @@ export default function App() {
           }
         />
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* =========================
+            FALLBACK
+        ========================== */}
+
+        <Route
+          path="*"
+          element={
+            <Navigate
+              to="/"
+              replace
+            />
+          }
+        />
+
       </Routes>
     </motion.div>
   );
 }
-
