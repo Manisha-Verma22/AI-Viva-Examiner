@@ -46,3 +46,27 @@ uvicorn==0.54.0
 websockets==16.1.1
 xxhash==4.0.1
 zstandard==0.25.0
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+.env.*
+
+# Node
+node_modules/
+dist/
+
+# Vite
+.vite/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
