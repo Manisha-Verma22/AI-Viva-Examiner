@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Activity,
   BookMarked,
@@ -23,6 +23,7 @@ import {
   DataTable,
   SectionHeading,
   StatCard,
+  StatusBlock,
   Toast,
   getGreeting,
   scoreStatus,
@@ -30,34 +31,31 @@ import {
   type Tone,
 } from "./dashboardKit";
 import {
-  adminActivity,
-  adminProfile,
-  adminRecordRows,
-  adminVivaRows,
-  batchRows,
-  courseRows,
-  departmentRows,
-  formatDate,
-  formatTime,
-  initialAdminStudents,
-  initialPendingStudents,
-  initialPendingTeachers,
-  initialTeachers,
-  institutionSettings,
-  subjectRows,
-  type AdminStudent,
-  type PendingApproval,
-  type Teacher,
-  type VivaStatus,
-} from "./mockData";
+  api,
+  getUser,
+  messageOf,
+  shortName,
+  type BatchRow,
+  type CourseRow,
+  type DepartmentRow,
+  type InstitutionSettings,
+  type PendingPerson,
+  type ResultRow,
+  type StudentRow,
+  type SubjectRow,
+  type TeacherRow,
+  type Viva,
+} from "./api";
+import { useLoad } from "./useLoad";
+import { formatDate, formatTime } from "./mockData";
 
 /* ---------------------------------------------------------
-   Institution Admin dashboard (mock data - swap for API
-   calls later)
+   Institution admin dashboard - all data comes from the API
 --------------------------------------------------------- */
 
 type Tab =
   | "dashboard"
+  | "approvals"
   | "students"
   | "teachers"
   | "departments"
@@ -66,7 +64,6 @@ type Tab =
   | "batches"
   | "vivas"
   | "records"
-  | "approvals"
   | "settings"
   | "profile";
 
@@ -99,53 +96,43 @@ const titles: Record<Tab, string> = {
   profile: "Profile & Settings",
 };
 
-const statusTone: Record<VivaStatus, Tone> = {
+const statusTone: Record<Viva["status"], Tone> = {
   Upcoming: "info",
   Scheduled: "neutral",
   Completed: "success",
+  Cancelled: "danger",
 };
 
-/* ----------------------------- Static table columns ----------------------------- */
+/* ----------------------------- Table columns ----------------------------- */
 
-const departmentColumns: Column<(typeof departmentRows)[number]>[] = [
+const departmentColumns: Column<DepartmentRow>[] = [
   { key: "name", header: "Department", render: (r) => <strong>{r.name}</strong> },
-  { key: "head", header: "Head", render: (r) => r.head },
   { key: "teachers", header: "Teachers", render: (r) => r.teachers },
-  { key: "students", header: "Students", render: (r) => r.students },
+  { key: "vivas", header: "Vivas", render: (r) => r.vivas },
 ];
 
-const courseColumns: Column<(typeof courseRows)[number]>[] = [
+const courseColumns: Column<CourseRow>[] = [
   { key: "name", header: "Course", render: (r) => <strong>{r.name}</strong> },
-  { key: "department", header: "Department", render: (r) => r.department },
-  { key: "duration", header: "Duration", render: (r) => r.duration },
   { key: "students", header: "Students", render: (r) => r.students },
+  { key: "vivas", header: "Vivas", render: (r) => r.vivas },
 ];
 
-const subjectColumns: Column<(typeof subjectRows)[number]>[] = [
+const subjectColumns: Column<SubjectRow>[] = [
   { key: "name", header: "Subject", render: (r) => <strong>{r.name}</strong> },
-  { key: "code", header: "Code", render: (r) => r.code },
   { key: "department", header: "Department", render: (r) => r.department },
   { key: "semester", header: "Semester", render: (r) => r.semester },
+  { key: "vivas", header: "Vivas", render: (r) => r.vivas },
 ];
 
-const batchColumns: Column<(typeof batchRows)[number]>[] = [
+const batchColumns: Column<BatchRow>[] = [
   { key: "name", header: "Batch", render: (r) => <strong>{r.name}</strong> },
-  { key: "course", header: "Programme", render: (r) => r.course },
   { key: "students", header: "Students", render: (r) => r.students },
-  {
-    key: "status",
-    header: "Status",
-    render: (r) => (
-      <Badge tone={r.status === "Active" ? "success" : "info"}>
-        {r.status}
-      </Badge>
-    ),
-  },
+  { key: "vivas", header: "Vivas", render: (r) => r.vivas },
 ];
 
-const vivaColumns: Column<(typeof adminVivaRows)[number]>[] = [
+const vivaColumns: Column<Viva>[] = [
   { key: "subject", header: "Subject", render: (r) => <strong>{r.subject}</strong> },
-  { key: "teacher", header: "Teacher", render: (r) => r.teacher },
+  { key: "teacher", header: "Teacher", render: (r) => r.teacher_name },
   { key: "batch", header: "Batch", render: (r) => r.batch },
   {
     key: "when",
@@ -160,19 +147,18 @@ const vivaColumns: Column<(typeof adminVivaRows)[number]>[] = [
   },
 ];
 
-const recordColumns: Column<(typeof adminRecordRows)[number]>[] = [
+const resultColumns: Column<ResultRow>[] = [
   {
     key: "student",
     header: "Student",
     render: (r) => (
       <div className="person-cell">
-        <span className="avatar avatar-xs">{r.student.charAt(0)}</span>
-        <strong>{r.student}</strong>
+        <span className="avatar avatar-xs">{r.student_name.charAt(0)}</span>
+        <strong>{r.student_name}</strong>
       </div>
     ),
   },
   { key: "subject", header: "Subject", render: (r) => r.subject },
-  { key: "teacher", header: "Teacher", render: (r) => r.teacher },
   { key: "date", header: "Date", render: (r) => formatDate(r.date) },
   {
     key: "score",
@@ -188,7 +174,7 @@ const recordColumns: Column<(typeof adminRecordRows)[number]>[] = [
   },
 ];
 
-const studentColumns: Column<AdminStudent>[] = [
+const studentColumns: Column<StudentRow>[] = [
   {
     key: "student",
     header: "Student",
@@ -197,29 +183,31 @@ const studentColumns: Column<AdminStudent>[] = [
         <span className="avatar avatar-xs">{s.name.charAt(0)}</span>
         <div>
           <strong>{s.name}</strong>
-          <small>{s.roll}</small>
+          <small>{s.roll_no ?? s.email}</small>
         </div>
       </div>
     ),
   },
-  { key: "course", header: "Course", render: (s) => s.course },
-  { key: "batch", header: "Batch", render: (s) => s.batch },
+  { key: "course", header: "Course", render: (s) => s.course ?? "—" },
+  { key: "batch", header: "Batch", render: (s) => s.batch ?? "—" },
   { key: "vivas", header: "Vivas", render: (s) => s.vivas },
   {
     key: "score",
     header: "Avg score",
     render: (s) => {
-      const status = scoreStatus(s.avgScore);
+      if (!s.vivas) return <Badge tone="neutral">No vivas yet</Badge>;
+
+      const status = scoreStatus(s.avg_score);
       return (
         <Badge tone={status.tone}>
-          {s.avgScore}% · {status.label}
+          {s.avg_score}% · {status.label}
         </Badge>
       );
     },
   },
 ];
 
-const teacherColumns: Column<Teacher>[] = [
+const teacherColumns: Column<TeacherRow>[] = [
   {
     key: "teacher",
     header: "Teacher",
@@ -235,8 +223,8 @@ const teacherColumns: Column<Teacher>[] = [
       </div>
     ),
   },
-  { key: "department", header: "Department", render: (t) => t.department },
-  { key: "teacherId", header: "Teacher ID", render: (t) => t.teacherId },
+  { key: "department", header: "Department", render: (t) => t.department ?? "—" },
+  { key: "teacherId", header: "Teacher ID", render: (t) => t.teacher_code ?? "—" },
   { key: "vivas", header: "Vivas", render: (t) => t.vivas },
   {
     key: "status",
@@ -248,87 +236,86 @@ const teacherColumns: Column<Teacher>[] = [
 /* ----------------------------- Dashboard ----------------------------- */
 
 export default function AdminDashboard() {
-  const [tab, setTab] = useState<Tab>("dashboard");
-  const [pendingTeachers, setPendingTeachers] = useState<PendingApproval[]>(
-    initialPendingTeachers,
-  );
-  const [pendingStudents, setPendingStudents] = useState<PendingApproval[]>(
-    initialPendingStudents,
-  );
-  const [teachers, setTeachers] = useState<Teacher[]>(initialTeachers);
-  const [students, setStudents] = useState<AdminStudent[]>(
-    initialAdminStudents,
-  );
-  const [settings, setSettings] = useState(institutionSettings);
-  const [toast, setToast] = useState("");
+  const session = getUser();
 
-  const goTo = (next: Tab) => setTab(next);
+  const me = {
+    name: session?.name ?? "Administrator",
+    email: session?.email ?? "",
+    institution: session?.institution_name ?? "",
+    institutionShort: session?.institution_short ?? "",
+  };
 
+  const summaryQuery = useLoad(() => api.admin.summary());
+  const approvalsQuery = useLoad(() => api.admin.approvals());
+  const studentsQuery = useLoad(() => api.admin.students());
+  const teachersQuery = useLoad(() => api.admin.teachers());
+  const vivasQuery = useLoad(() => api.admin.vivas());
+  const resultsQuery = useLoad(() => api.admin.results());
+  const departmentsQuery = useLoad(() => api.admin.departments());
+  const coursesQuery = useLoad(() => api.admin.courses());
+  const subjectsQuery = useLoad(() => api.admin.subjects());
+  const batchesQuery = useLoad(() => api.admin.batches());
+  const settingsQuery = useLoad(() => api.admin.institution());
+
+  const queries = [
+    summaryQuery,
+    approvalsQuery,
+    studentsQuery,
+    teachersQuery,
+    vivasQuery,
+    resultsQuery,
+    departmentsQuery,
+    coursesQuery,
+    subjectsQuery,
+    batchesQuery,
+    settingsQuery,
+  ];
+
+  const firstLoad = queries.some((query) => query.loading && !query.data);
+  const error = queries.find((query) => query.error)?.error ?? "";
+
+  const reloadAll = () => queries.forEach((query) => query.reload());
+
+  const summary = summaryQuery.data;
+  const pendingTeachers = approvalsQuery.data?.teachers ?? [];
+  const pendingStudents = approvalsQuery.data?.students ?? [];
   const pendingCount = pendingTeachers.length + pendingStudents.length;
+  const vivas = vivasQuery.data ?? [];
+  const results = resultsQuery.data ?? [];
+
+  const [tab, setTab] = useState<Tab>("dashboard");
+  const [toast, setToast] = useState("");
+  const [form, setForm] = useState<InstitutionSettings | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  /* Fill the settings form once it has loaded */
+  useEffect(() => {
+    if (settingsQuery.data) setForm(settingsQuery.data);
+  }, [settingsQuery.data]);
 
   /* ----------------------------- Approvals ----------------------------- */
 
-  const decideTeacher = (person: PendingApproval, approve: boolean) => {
-    setPendingTeachers((current) =>
-      current.filter((item) => item.id !== person.id),
-    );
+  const decide = async (person: PendingPerson, approve: boolean) => {
+    try {
+      if (approve) await api.admin.approve(person.id);
+      else await api.admin.reject(person.id);
 
-    if (approve) {
-      setTeachers((current) => [
-        ...current,
-        {
-          id: `t-${person.id}`,
-          name: person.name,
-          email: `${person.name
-            .toLowerCase()
-            .replace(/^(dr|prof)\.?\s+/, "")
-            .replace(/\s+/g, ".")}@nitsikkim.edu`,
-          department: person.detail,
-          teacherId: person.extra.replace("Teacher ID ", ""),
-          vivas: 0,
-        },
-      ]);
+      setToast(
+        approve
+          ? `${person.name} was approved.`
+          : `${person.name}'s request was rejected.`,
+      );
+
+      summaryQuery.reload();
+      approvalsQuery.reload();
+      studentsQuery.reload();
+      teachersQuery.reload();
+    } catch (err) {
+      setToast(messageOf(err));
     }
-
-    setToast(
-      approve
-        ? `${person.name} approved as a teacher.`
-        : `${person.name}'s request was rejected.`,
-    );
   };
 
-  const decideStudent = (person: PendingApproval, approve: boolean) => {
-    setPendingStudents((current) =>
-      current.filter((item) => item.id !== person.id),
-    );
-
-    if (approve) {
-      setStudents((current) => [
-        ...current,
-        {
-          id: `s-${person.id}`,
-          name: person.name,
-          roll: "Pending ID",
-          batch: person.extra.replace("Batch ", ""),
-          department: "",
-          course: person.detail,
-          vivas: 0,
-          avgScore: 0,
-        },
-      ]);
-    }
-
-    setToast(
-      approve
-        ? `${person.name} approved as a student.`
-        : `${person.name}'s request was rejected.`,
-    );
-  };
-
-  const renderApprovalCard = (
-    person: PendingApproval,
-    onDecide: (person: PendingApproval, approve: boolean) => void,
-  ) => (
+  const renderApprovalCard = (person: PendingPerson) => (
     <div className="approval-card" key={person.id}>
       <span className="avatar avatar-sm">
         {person.name.replace(/^(Dr|Prof)\.?\s+/i, "").charAt(0)}
@@ -345,7 +332,7 @@ export default function AdminDashboard() {
         <button
           type="button"
           className="dashboard-continue compact"
-          onClick={() => onDecide(person, true)}
+          onClick={() => void decide(person, true)}
         >
           <Check size={16} />
           Approve
@@ -354,7 +341,7 @@ export default function AdminDashboard() {
         <button
           type="button"
           className="dashboard-secondary compact"
-          onClick={() => onDecide(person, false)}
+          onClick={() => void decide(person, false)}
         >
           <X size={16} />
           Reject
@@ -372,19 +359,19 @@ export default function AdminDashboard() {
           <span className="welcome-tag">INSTITUTION ADMIN</span>
 
           <h1>
-            {getGreeting()}, {adminProfile.short}
+            {getGreeting()}, {shortName(me.name)}
           </h1>
 
           <p>
-            Manage people, courses and vivas for{" "}
-            {adminProfile.institutionShort} from one place.
+            Manage people, courses and vivas for {me.institutionShort} from
+            one place.
           </p>
         </div>
 
         <button
           type="button"
           className="dashboard-continue"
-          onClick={() => goTo("approvals")}
+          onClick={() => setTab("approvals")}
         >
           <UserCheck size={18} />
           Review approvals ({pendingCount})
@@ -392,17 +379,25 @@ export default function AdminDashboard() {
       </section>
 
       <div className="dashboard-stat-grid four">
-        <StatCard icon={GraduationCap} label="Students" value={students.length} />
-        <StatCard icon={Users} label="Teachers" value={teachers.length} />
         <StatCard
-          icon={Building2}
-          label="Departments"
-          value={departmentRows.length}
+          icon={GraduationCap}
+          label="Students"
+          value={summary?.students ?? 0}
+        />
+        <StatCard
+          icon={Users}
+          label="Teachers"
+          value={summary?.teachers ?? 0}
+        />
+        <StatCard
+          icon={CalendarDays}
+          label="Vivas"
+          value={summary?.vivas ?? 0}
         />
         <StatCard
           icon={UserCheck}
           label="Pending approvals"
-          value={pendingCount}
+          value={summary?.pending_approvals ?? 0}
         />
       </div>
 
@@ -414,7 +409,7 @@ export default function AdminDashboard() {
             <button
               type="button"
               className="text-action"
-              onClick={() => goTo("approvals")}
+              onClick={() => setTab("approvals")}
             >
               View all
             </button>
@@ -427,36 +422,40 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <>
-              {pendingTeachers.slice(0, 2).map((person) =>
-                renderApprovalCard(person, decideTeacher),
-              )}
-              {pendingStudents.slice(0, 1).map((person) =>
-                renderApprovalCard(person, decideStudent),
-              )}
+              {pendingTeachers.slice(0, 2).map(renderApprovalCard)}
+              {pendingStudents.slice(0, 1).map(renderApprovalCard)}
             </>
           )}
         </section>
 
         <section className="dashboard-card">
           <div className="card-title-row">
-            <h3>Recent activity</h3>
+            <h3>Recent results</h3>
           </div>
 
           <div className="activity-list">
-            {adminActivity.map((item) => (
-              <div className="activity-item" key={item.id}>
+            {results.slice(0, 4).map((result) => (
+              <div className="activity-item" key={result.id}>
                 <div className="activity-icon">
                   <Activity size={18} />
                 </div>
 
                 <div className="activity-content">
-                  <strong>{item.title}</strong>
-                  <span>{item.detail}</span>
+                  <strong>{result.student_name}</strong>
+                  <span>
+                    {result.subject} · {result.score}%
+                  </span>
                 </div>
 
-                <span className="activity-time">{item.time}</span>
+                <span className="activity-time">
+                  {formatDate(result.date)}
+                </span>
               </div>
             ))}
+
+            {results.length === 0 && (
+              <p className="section-sub">No viva results yet.</p>
+            )}
           </div>
         </section>
       </div>
@@ -468,7 +467,7 @@ export default function AdminDashboard() {
           <button
             type="button"
             className="text-action"
-            onClick={() => goTo("vivas")}
+            onClick={() => setTab("vivas")}
           >
             View all
           </button>
@@ -478,8 +477,9 @@ export default function AdminDashboard() {
       <div className="dashboard-card table-card">
         <DataTable
           columns={vivaColumns}
-          rows={adminVivaRows.slice(0, 4)}
-          rowKey={(row) => row.id}
+          rows={vivas.slice(0, 4)}
+          rowKey={(row) => String(row.id)}
+          emptyText="No vivas scheduled yet."
         />
       </div>
     </>
@@ -503,9 +503,7 @@ export default function AdminDashboard() {
             <h3>No pending teacher requests</h3>
           </div>
         ) : (
-          pendingTeachers.map((person) =>
-            renderApprovalCard(person, decideTeacher),
-          )
+          pendingTeachers.map(renderApprovalCard)
         )}
       </section>
 
@@ -519,120 +517,106 @@ export default function AdminDashboard() {
             <h3>No pending student requests</h3>
           </div>
         ) : (
-          pendingStudents.map((person) =>
-            renderApprovalCard(person, decideStudent),
-          )
+          pendingStudents.map(renderApprovalCard)
         )}
       </section>
     </>
   );
 
-  const handleSaveSettings = (event: FormEvent) => {
+  const handleSaveSettings = async (event: FormEvent) => {
     event.preventDefault();
-    setToast("Institution settings saved.");
+
+    if (!form) return;
+
+    setSavingSettings(true);
+
+    try {
+      const saved = await api.admin.updateInstitution(form);
+      setForm(saved);
+      setToast("Institution settings saved.");
+    } catch (err) {
+      setToast(messageOf(err));
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
-  const renderSettings = () => (
-    <>
-      <SectionHeading
-        title="Institution Settings"
-        subtitle="Details shown to teachers and students of your institution."
-      />
+  const renderSettings = () => {
+    if (!form) return null;
 
-      <form className="dashboard-card" onSubmit={handleSaveSettings}>
-        <div className="schedule-grid">
-          <div className="dashboard-field full">
-            <label htmlFor="inst-name">Institution name</label>
-            <input
-              id="inst-name"
-              className="field-control"
-              value={settings.name}
-              onChange={(event) =>
-                setSettings({ ...settings, name: event.target.value })
-              }
-            />
+    const field = (
+      id: string,
+      label: string,
+      key: keyof InstitutionSettings,
+      full = false,
+    ) => (
+      <div className={`dashboard-field ${full ? "full" : ""}`}>
+        <label htmlFor={id}>{label}</label>
+        <input
+          id={id}
+          className="field-control"
+          value={form[key]}
+          onChange={(event) =>
+            setForm({ ...form, [key]: event.target.value })
+          }
+        />
+      </div>
+    );
+
+    return (
+      <>
+        <SectionHeading
+          title="Institution Settings"
+          subtitle="Details shown to teachers and students of your institution."
+        />
+
+        <form
+          className="dashboard-card"
+          onSubmit={(event) => void handleSaveSettings(event)}
+        >
+          <div className="schedule-grid">
+            {field("inst-name", "Institution name", "name", true)}
+            {field("inst-code", "Institution code", "code")}
+            {field("inst-email", "Contact email", "contact_email")}
+            {field("inst-location", "Location", "location")}
+            {field("inst-timezone", "Time zone", "timezone")}
           </div>
 
-          <div className="dashboard-field">
-            <label htmlFor="inst-code">Institution code</label>
-            <input
-              id="inst-code"
-              className="field-control"
-              value={settings.code}
-              onChange={(event) =>
-                setSettings({ ...settings, code: event.target.value })
-              }
-            />
+          <div className="dashboard-button-row">
+            <button
+              type="button"
+              className="dashboard-secondary"
+              onClick={() => settingsQuery.data && setForm(settingsQuery.data)}
+            >
+              Reset
+            </button>
+
+            <button
+              type="submit"
+              className="dashboard-continue"
+              disabled={savingSettings}
+            >
+              {savingSettings ? "Saving…" : "Save changes"}
+            </button>
           </div>
+        </form>
+      </>
+    );
+  };
 
-          <div className="dashboard-field">
-            <label htmlFor="inst-email">Contact email</label>
-            <input
-              id="inst-email"
-              type="email"
-              className="field-control"
-              value={settings.email}
-              onChange={(event) =>
-                setSettings({ ...settings, email: event.target.value })
-              }
-            />
-          </div>
-
-          <div className="dashboard-field">
-            <label htmlFor="inst-location">Location</label>
-            <input
-              id="inst-location"
-              className="field-control"
-              value={settings.location}
-              onChange={(event) =>
-                setSettings({ ...settings, location: event.target.value })
-              }
-            />
-          </div>
-
-          <div className="dashboard-field">
-            <label htmlFor="inst-timezone">Time zone</label>
-            <input
-              id="inst-timezone"
-              className="field-control"
-              value={settings.timezone}
-              onChange={(event) =>
-                setSettings({ ...settings, timezone: event.target.value })
-              }
-            />
-          </div>
-        </div>
-
-        <div className="dashboard-button-row">
-          <button
-            type="button"
-            className="dashboard-secondary"
-            onClick={() => setSettings(institutionSettings)}
-          >
-            Reset
-          </button>
-
-          <button type="submit" className="dashboard-continue">
-            Save changes
-          </button>
-        </div>
-      </form>
-    </>
-  );
-
-  const content: Record<Exclude<Tab, "profile">, () => React.ReactElement> =
+  const content: Record<Exclude<Tab, "profile">, () => React.ReactElement | null> =
     {
       dashboard: renderDashboard,
       approvals: renderApprovals,
       students: () => (
         <DataSection
           title="Students"
-          subtitle="Every student registered at your institution."
+          subtitle="Every approved student at your institution."
           columns={studentColumns}
-          rows={students}
-          rowKey={(row) => row.id}
+          rows={studentsQuery.data ?? []}
+          rowKey={(row) => String(row.id)}
           searchText={(row) =>
-            `${row.name} ${row.roll} ${row.course} ${row.batch}`
+            `${row.name} ${row.roll_no ?? ""} ${row.course ?? ""} ${row.batch ?? ""}`
           }
           searchPlaceholder="Search students"
         />
@@ -642,10 +626,10 @@ export default function AdminDashboard() {
           title="Teachers"
           subtitle="Approved teachers at your institution."
           columns={teacherColumns}
-          rows={teachers}
-          rowKey={(row) => row.id}
+          rows={teachersQuery.data ?? []}
+          rowKey={(row) => String(row.id)}
           searchText={(row) =>
-            `${row.name} ${row.email} ${row.department} ${row.teacherId}`
+            `${row.name} ${row.email} ${row.department ?? ""} ${row.teacher_code ?? ""}`
           }
           searchPlaceholder="Search teachers"
         />
@@ -653,34 +637,34 @@ export default function AdminDashboard() {
       departments: () => (
         <DataSection
           title="Departments"
-          subtitle="Academic departments and their heads."
+          subtitle="Departments found across your teachers and vivas."
           columns={departmentColumns}
-          rows={departmentRows}
-          rowKey={(row) => row.id}
-          searchText={(row) => `${row.name} ${row.head}`}
+          rows={departmentsQuery.data ?? []}
+          rowKey={(row) => row.name}
+          searchText={(row) => row.name}
           searchPlaceholder="Search departments"
         />
       ),
       courses: () => (
         <DataSection
           title="Courses"
-          subtitle="Programmes offered by your institution."
+          subtitle="Courses your students are enrolled in."
           columns={courseColumns}
-          rows={courseRows}
-          rowKey={(row) => row.id}
-          searchText={(row) => `${row.name} ${row.department}`}
+          rows={coursesQuery.data ?? []}
+          rowKey={(row) => row.name}
+          searchText={(row) => row.name}
           searchPlaceholder="Search courses"
         />
       ),
       subjects: () => (
         <DataSection
           title="Subjects"
-          subtitle="Subjects that vivas can be scheduled for."
+          subtitle="Subjects that vivas have been scheduled for."
           columns={subjectColumns}
-          rows={subjectRows}
-          rowKey={(row) => row.id}
+          rows={subjectsQuery.data ?? []}
+          rowKey={(row) => `${row.name}-${row.department}-${row.semester}`}
           searchText={(row) =>
-            `${row.name} ${row.code} ${row.department} ${row.semester}`
+            `${row.name} ${row.department} ${row.semester}`
           }
           searchPlaceholder="Search subjects"
         />
@@ -688,11 +672,11 @@ export default function AdminDashboard() {
       batches: () => (
         <DataSection
           title="Batches"
-          subtitle="Student batches across your programmes."
+          subtitle="Student batches at your institution."
           columns={batchColumns}
-          rows={batchRows}
-          rowKey={(row) => row.id}
-          searchText={(row) => `${row.name} ${row.course} ${row.status}`}
+          rows={batchesQuery.data ?? []}
+          rowKey={(row) => row.name}
+          searchText={(row) => row.name}
           searchPlaceholder="Search batches"
         />
       ),
@@ -701,10 +685,10 @@ export default function AdminDashboard() {
           title="Scheduled Vivas"
           subtitle="All vivas created by teachers at your institution."
           columns={vivaColumns}
-          rows={adminVivaRows}
-          rowKey={(row) => row.id}
+          rows={vivas}
+          rowKey={(row) => String(row.id)}
           searchText={(row) =>
-            `${row.subject} ${row.teacher} ${row.batch} ${row.status}`
+            `${row.subject} ${row.teacher_name} ${row.batch} ${row.status}`
           }
           searchPlaceholder="Search vivas"
         />
@@ -713,39 +697,47 @@ export default function AdminDashboard() {
         <DataSection
           title="Viva Records"
           subtitle="Completed vivas and their scores."
-          columns={recordColumns}
-          rows={adminRecordRows}
-          rowKey={(row) => row.id}
-          searchText={(row) =>
-            `${row.student} ${row.subject} ${row.teacher}`
-          }
+          columns={resultColumns}
+          rows={results}
+          rowKey={(row) => String(row.id)}
+          searchText={(row) => `${row.student_name} ${row.subject}`}
           searchPlaceholder="Search records"
         />
       ),
       settings: renderSettings,
     };
 
+  const showStatus = firstLoad || Boolean(error);
+
   return (
     <DashboardShell
       portalLabel="Admin workspace"
       navItems={navItems}
       active={tab}
-      onNavigate={(key) => goTo(key as Tab)}
+      onNavigate={(key) => setTab(key as Tab)}
       title={titles[tab]}
       photoStorageKey="elysian.admin.photo"
       user={{
-        name: adminProfile.name,
-        email: adminProfile.email,
-        subtitle: `${adminProfile.institutionShort} · Administrator`,
-        roleLabel: adminProfile.role,
+        name: me.name,
+        email: me.email,
+        subtitle: `${me.institutionShort} · Administrator`,
+        roleLabel: "Institution Administrator",
         details: [
-          { label: "Institution", value: adminProfile.institution },
-          { label: "Role", value: adminProfile.role },
-          { label: "Admin ID", value: adminProfile.adminId },
+          { label: "Institution", value: me.institution },
+          { label: "Role", value: "Institution Administrator" },
         ],
       }}
     >
-      {tab !== "profile" && content[tab]()}
+      {tab !== "profile" &&
+        (showStatus ? (
+          <StatusBlock
+            loading={firstLoad}
+            error={error}
+            onRetry={reloadAll}
+          />
+        ) : (
+          content[tab]()
+        ))}
 
       <Toast message={toast} onClose={() => setToast("")} />
     </DashboardShell>

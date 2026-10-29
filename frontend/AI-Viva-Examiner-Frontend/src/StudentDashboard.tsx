@@ -1,119 +1,37 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type ReactElement,
-} from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
   CalendarDays,
-  Camera,
   Check,
-  ChevronDown,
   Clock3,
   GraduationCap,
   History as HistoryIcon,
   LayoutDashboard,
-  LogOut,
-  Mail,
   MessageSquare,
   Sparkles,
-  Trash2,
   Trophy,
-  User,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 
-import ElysianMark from "./ElysianMark";
+import DashboardShell, { type NavItem } from "./DashboardShell";
+import {
+  Badge,
+  DataSection,
+  SectionHeading,
+  StatCard,
+  StatusBlock,
+  getGreeting,
+  scoreStatus,
+  type Column,
+} from "./dashboardKit";
+import { api, getUser, shortName, type ResultRow, type Viva } from "./api";
+import { useLoad } from "./useLoad";
+import { formatDate, formatTime } from "./mockData";
 
 /* ---------------------------------------------------------
-   Demo data - replace with real data from the backend later
+   Student dashboard - vivas and results come from the API
 --------------------------------------------------------- */
-
-const student = {
-  name: "Manisha",
-  email: "student@example.com",
-  institution: "National Institute of Technology Sikkim",
-  institutionShort: "NIT Sikkim",
-  department: "Computer Science and Engineering",
-  departmentShort: "CSE",
-};
-
-type Viva = {
-  id: string;
-  title: string;
-  subject: string;
-  date: string;
-  time: string;
-  duration: string;
-  status: "ready" | "upcoming";
-};
-
-const vivas: Viva[] = [
-  {
-    id: "dbms-u3",
-    title: "DBMS — Unit 3 Viva",
-    subject: "Database Management Systems",
-    date: "October 5, 2026",
-    time: "10:00 AM",
-    duration: "15 minutes",
-    status: "ready",
-  },
-  {
-    id: "os-u2",
-    title: "Operating Systems — Unit 2",
-    subject: "Operating Systems",
-    date: "October 8, 2026",
-    time: "11:30 AM",
-    duration: "15 minutes",
-    status: "upcoming",
-  },
-];
-
-type Result = {
-  id: string;
-  title: string;
-  date: string;
-  score: number;
-  reviewed: boolean;
-};
-
-const results: Result[] = [
-  {
-    id: "dbms-u2",
-    title: "DBMS — Unit 2 Viva",
-    date: "September 21, 2026",
-    score: 82,
-    reviewed: true,
-  },
-  {
-    id: "ds-u4",
-    title: "Data Structures — Unit 4",
-    date: "September 12, 2026",
-    score: 74,
-    reviewed: true,
-  },
-  {
-    id: "cn-u1",
-    title: "Computer Networks — Unit 1",
-    date: "September 3, 2026",
-    score: 78,
-    reviewed: false,
-  },
-];
-
-const reviewRequests = [
-  {
-    id: "rr-1",
-    title: "Data Structures — Unit 4",
-    note: "Re-evaluation requested for Question 3.",
-    date: "Requested on September 14, 2026",
-    status: "Pending",
-  },
-];
 
 type Tab =
   | "dashboard"
@@ -123,11 +41,7 @@ type Tab =
   | "reviews"
   | "profile";
 
-const navItems: {
-  key: Exclude<Tab, "profile">;
-  label: string;
-  icon: LucideIcon;
-}[] = [
+const navItems: NavItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "vivas", label: "My Vivas", icon: BookOpen },
   { key: "performance", label: "Performance", icon: BarChart3 },
@@ -141,147 +55,77 @@ const titles: Record<Tab, string> = {
   performance: "Performance",
   history: "History",
   reviews: "Review Requests",
-  profile: "My Profile",
+  profile: "Profile & Settings",
 };
 
-const PHOTO_KEY = "elysian.student.photo";
-const MAX_PHOTO_BYTES = 2 * 1024 * 1024;
-
-function Avatar({
-  photo,
-  initial,
-  className,
-}: {
-  photo: string | null;
-  initial: string;
-  className: string;
-}) {
-  return (
-    <span className={`avatar ${className}`}>
-      {photo ? <img src={photo} alt="Profile" /> : initial}
-    </span>
-  );
-}
-
-function getGreeting() {
-  const hour = new Date().getHours();
-
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
+const historyColumns: Column<ResultRow>[] = [
+  {
+    key: "subject",
+    header: "Viva",
+    render: (row) => (
+      <div className="person-cell">
+        <span className="file-chip">
+          <BookOpen size={16} />
+        </span>
+        <div>
+          <strong>{row.subject}</strong>
+          <small>{formatDate(row.date)}</small>
+        </div>
+      </div>
+    ),
+  },
+  { key: "duration", header: "Duration", render: (row) => row.duration },
+  { key: "score", header: "Score", render: (row) => `${row.score}%` },
+  {
+    key: "status",
+    header: "Result",
+    render: (row) => {
+      const status = scoreStatus(row.score);
+      return <Badge tone={status.tone}>{status.label}</Badge>;
+    },
+  },
+];
 
 export default function StudentDashboard() {
   const navigate = useNavigate();
+  const session = getUser();
+
+  const me = {
+    name: session?.name ?? "Student",
+    email: session?.email ?? "",
+    institution: session?.institution_name ?? "",
+    institutionShort: session?.institution_short ?? "",
+    course: session?.course ?? "",
+    batch: session?.batch ?? "",
+    rollNo: session?.roll_no ?? "",
+  };
+
+  const vivasQuery = useLoad(() => api.student.vivas());
+  const resultsQuery = useLoad(() => api.student.results());
+
+  const vivas = vivasQuery.data ?? [];
+  const results = resultsQuery.data ?? [];
+
+  const firstLoad =
+    (vivasQuery.loading && !vivasQuery.data) ||
+    (resultsQuery.loading && !resultsQuery.data);
+  const error = vivasQuery.error || resultsQuery.error;
+
+  const reloadAll = () => {
+    vivasQuery.reload();
+    resultsQuery.reload();
+  };
 
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [photo, setPhoto] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(PHOTO_KEY);
-    } catch {
-      return null;
-    }
-  });
-  const [photoError, setPhotoError] = useState("");
 
-  const menuRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const initial = student.name.charAt(0).toUpperCase();
-
-  const averageScore = Math.round(
-    results.reduce((sum, result) => sum + result.score, 0) /
-      results.length,
-  );
-  const bestScore = Math.max(...results.map((result) => result.score));
-
-  /* Close the profile menu on outside click or Escape */
-  useEffect(() => {
-    if (!menuOpen) return;
-
-    const handleClick = (event: MouseEvent) => {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(event.target as Node)
-      ) {
-        setMenuOpen(false);
-      }
-    };
-
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("keydown", handleKey);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [menuOpen]);
-
-  const goTo = (next: Tab) => {
-    setTab(next);
-    setMenuOpen(false);
-    window.scrollTo({ top: 0 });
-  };
-
-  const signOut = () => navigate("/");
-
-  const openPhotoPicker = () => fileInputRef.current?.click();
-
-  const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setPhotoError("Please choose an image file (JPG, PNG or WebP).");
-      return;
-    }
-
-    if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError("Image must be smaller than 2 MB.");
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      if (typeof reader.result !== "string") return;
-
-      setPhoto(reader.result);
-      setPhotoError("");
-
-      try {
-        localStorage.setItem(PHOTO_KEY, reader.result);
-      } catch {
-        setPhotoError(
-          "Photo applied, but it could not be saved on this device.",
-        );
-      }
-    };
-
-    reader.readAsDataURL(file);
-  };
-
-  const removePhoto = () => {
-    setPhoto(null);
-    setPhotoError("");
-
-    try {
-      localStorage.removeItem(PHOTO_KEY);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  /* ------------------------- Sections ------------------------- */
+  const average = results.length
+    ? Math.round(
+        results.reduce((sum, row) => sum + row.score, 0) / results.length,
+      )
+    : null;
+  const best = results.length
+    ? Math.max(...results.map((row) => row.score))
+    : null;
 
   const renderVivaCard = (viva: Viva) => (
     <article className="dashboard-card viva-card" key={viva.id}>
@@ -292,42 +136,40 @@ export default function StudentDashboard() {
           </div>
 
           <div>
-            <h3>{viva.title}</h3>
-            <p className="viva-subject">{viva.subject}</p>
+            <h3>{viva.subject}</h3>
+            <p className="viva-subject">{viva.semester}</p>
           </div>
         </div>
 
         <span
-          className={`viva-status ${
-            viva.status === "ready" ? "ready" : ""
-          }`}
+          className={`viva-status ${viva.status === "Upcoming" ? "ready" : ""}`}
         >
           <span />
-          {viva.status === "ready" ? "Ready" : "Upcoming"}
+          {viva.status === "Upcoming" ? "Ready" : "Scheduled"}
         </span>
       </div>
 
       <div className="viva-meta">
         <span>
           <GraduationCap size={16} />
-          {student.department}
+          {viva.department}
         </span>
 
         <span>
           <CalendarDays size={16} />
-          {viva.date}
+          {formatDate(viva.date)}
         </span>
 
         <span>
           <Clock3 size={16} />
-          {viva.time} · {viva.duration}
+          {formatTime(viva.time)} · {viva.duration_minutes} minutes
         </span>
       </div>
 
       <div className="viva-card-footer">
         <span>AI-generated questions · Adaptive follow-ups</span>
 
-        {viva.status === "ready" ? (
+        {viva.status === "Upcoming" ? (
           <button
             type="button"
             className="dashboard-continue"
@@ -337,47 +179,28 @@ export default function StudentDashboard() {
             <BookOpen size={18} />
           </button>
         ) : (
-          <button
-            type="button"
-            className="dashboard-continue"
-            disabled
-          >
-            Opens {viva.date.split(",")[0]}
+          <button type="button" className="dashboard-continue" disabled>
+            Opens {formatDate(viva.date)}
           </button>
         )}
       </div>
     </article>
   );
 
-  const renderResults = (items: Result[]) => (
-    <div className="dashboard-card recent-vivas">
-      {items.map((result) => (
-        <div className="recent-viva" key={result.id}>
-          <div className="recent-viva-icon">
-            <BookOpen size={18} />
-          </div>
-
-          <div className="recent-viva-info">
-            <strong>{result.title}</strong>
-            <small>{result.date}</small>
-          </div>
-
-          <div className="recent-viva-score">
-            <span>Score</span>
-            <strong>{result.score}%</strong>
-          </div>
-
-          <span
-            className={`review-status ${
-              result.reviewed ? "" : "pending"
-            }`}
-          >
-            {result.reviewed && <Check size={13} />}
-            {result.reviewed ? "Reviewed" : "Pending review"}
-          </span>
+  const vivaList = (
+    <>
+      {vivas.length === 0 ? (
+        <div className="empty-state">
+          <h3>No vivas scheduled yet</h3>
+          <p>
+            When your teachers schedule a viva for your batch, it will
+            appear here.
+          </p>
         </div>
-      ))}
-    </div>
+      ) : (
+        <div className="viva-list">{vivas.map(renderVivaCard)}</div>
+      )}
+    </>
   );
 
   const renderDashboard = () => (
@@ -387,7 +210,7 @@ export default function StudentDashboard() {
           <span className="welcome-tag">YOUR AI VIVA EXAMINER</span>
 
           <h1>
-            {getGreeting()}, {student.name}
+            {getGreeting()}, {shortName(me.name)}
           </h1>
 
           <p>
@@ -401,448 +224,139 @@ export default function StudentDashboard() {
         </div>
       </section>
 
-      <div className="dashboard-section-heading">
-        <div>
-          <h2>Upcoming Vivas</h2>
-          <p className="section-sub">
-            Vivas assigned to you by your institution.
-          </p>
-        </div>
+      <SectionHeading
+        title="Upcoming Vivas"
+        subtitle="Vivas assigned to you by your institution."
+        right={
+          <span className="required-label">{vivas.length} available</span>
+        }
+      />
 
-        <span className="required-label">
-          {vivas.length} available
-        </span>
-      </div>
-
-      <div className="viva-list">{vivas.map(renderVivaCard)}</div>
+      {vivaList}
     </>
   );
 
   const renderVivas = () => (
     <>
-      <div className="dashboard-section-heading">
-        <div>
-          <h2>My Vivas</h2>
-          <p className="section-sub">
-            Every viva assigned to you, with its schedule and status.
-          </p>
-        </div>
+      <SectionHeading
+        title="My Vivas"
+        subtitle="Every viva assigned to you, with its schedule and status."
+        right={
+          <span className="required-label">{vivas.length} assigned</span>
+        }
+      />
 
-        <span className="required-label">
-          {vivas.length} assigned
-        </span>
-      </div>
-
-      <div className="viva-list">{vivas.map(renderVivaCard)}</div>
+      {vivaList}
     </>
   );
 
   const renderPerformance = () => (
     <>
-      <div className="dashboard-section-heading">
-        <div>
-          <h2>Performance Overview</h2>
-          <p className="section-sub">
-            A summary of how you have done across your vivas.
-          </p>
-        </div>
+      <SectionHeading
+        title="Performance Overview"
+        subtitle="A summary of how you have done across your vivas."
+      />
+
+      <div className="dashboard-stat-grid">
+        <StatCard
+          icon={BarChart3}
+          label="Average score"
+          value={average === null ? "—" : `${average}%`}
+        />
+        <StatCard
+          icon={Check}
+          label="Vivas completed"
+          value={results.length}
+        />
+        <StatCard
+          icon={Trophy}
+          label="Best score"
+          value={best === null ? "—" : `${best}%`}
+        />
       </div>
 
-      <div className="performance-grid">
-        <div className="dashboard-card performance-card">
-          <div className="card-icon">
-            <BarChart3 size={20} />
-          </div>
-          <span className="performance-label">AVERAGE SCORE</span>
-          <strong>{averageScore}%</strong>
-          <small>Across {results.length} vivas</small>
-        </div>
-
-        <div className="dashboard-card performance-card">
-          <div className="card-icon">
-            <Check size={20} />
-          </div>
-          <span className="performance-label">VIVAS COMPLETED</span>
-          <strong>{results.length}</strong>
-          <small>{vivas.length} more scheduled</small>
-        </div>
-
-        <div className="dashboard-card performance-card">
-          <div className="card-icon">
-            <Trophy size={20} />
-          </div>
-          <span className="performance-label">BEST SCORE</span>
-          <strong>{bestScore}%</strong>
-          <small>Your highest viva result</small>
-        </div>
-      </div>
-
-      <div className="dashboard-section-heading">
-        <h2>Recent Vivas</h2>
-      </div>
-
-      {renderResults(results)}
+      <DataSection
+        title="Recent Vivas"
+        columns={historyColumns}
+        rows={results.slice(0, 5)}
+        rowKey={(row) => String(row.id)}
+        searchText={(row) => row.subject}
+        searchPlaceholder="Search your vivas"
+        emptyText="You have not completed a viva yet."
+      />
     </>
   );
 
   const renderHistory = () => (
-    <>
-      <div className="dashboard-section-heading">
-        <div>
-          <h2>Viva History</h2>
-          <p className="section-sub">
-            All vivas you have completed so far.
-          </p>
-        </div>
-
-        <span className="required-label">
-          {results.length} completed
-        </span>
-      </div>
-
-      {renderResults(results)}
-    </>
+    <DataSection
+      title="Viva History"
+      subtitle="All vivas you have completed so far."
+      columns={historyColumns}
+      rows={results}
+      rowKey={(row) => String(row.id)}
+      searchText={(row) => row.subject}
+      searchPlaceholder="Search your vivas"
+      emptyText="You have not completed a viva yet."
+    />
   );
 
   const renderReviews = () => (
     <>
-      <div className="dashboard-section-heading">
-        <div>
-          <h2>Review Requests</h2>
-          <p className="section-sub">
-            Ask your teacher to re-evaluate an answer and track the
-            outcome here.
-          </p>
-        </div>
-
-        <span className="required-label">
-          {reviewRequests.length} open
-        </span>
-      </div>
-
-      <div className="viva-list">
-        {reviewRequests.map((request) => (
-          <div className="dashboard-card review-card" key={request.id}>
-            <div className="review-card-icon">
-              <MessageSquare size={20} />
-            </div>
-
-            <div>
-              <h3>{request.title}</h3>
-              <p>{request.note}</p>
-              <small>{request.date}</small>
-            </div>
-
-            <span className="review-status pending">
-              {request.status}
-            </span>
-          </div>
-        ))}
-      </div>
-    </>
-  );
-
-  const renderProfile = () => (
-    <>
-      <section className="dashboard-card profile-hero">
-        <div className="profile-photo-wrap">
-          <Avatar photo={photo} initial={initial} className="avatar-lg" />
-
-          <button
-            type="button"
-            className="profile-photo-edit"
-            aria-label="Change profile photo"
-            onClick={openPhotoPicker}
-          >
-            <Camera size={15} />
-          </button>
-        </div>
-
-        <div className="profile-hero-text">
-          <h1>{student.name}</h1>
-          <p>
-            {student.institutionShort} · {student.departmentShort}
-          </p>
-          <span className="profile-role">Student</span>
-        </div>
-
-        <div className="profile-hero-actions">
-          <div className="profile-photo-actions">
-            <button type="button" onClick={openPhotoPicker}>
-              <Camera size={14} />
-              {photo ? "Change photo" : "Upload photo"}
-            </button>
-
-            {photo && (
-              <button
-                type="button"
-                className="muted"
-                onClick={removePhoto}
-              >
-                <Trash2 size={14} />
-                Remove
-              </button>
-            )}
-          </div>
-
-          {photoError && (
-            <p className="profile-photo-error">{photoError}</p>
-          )}
-        </div>
-      </section>
-
-      <section className="dashboard-card">
-        <div className="card-heading">
-          <div className="card-icon">
-            <User size={20} />
-          </div>
-          <h3>Personal details</h3>
-        </div>
-
-        <div className="academic-fields">
-          <div className="dashboard-field">
-            <label htmlFor="profile-name">Full name</label>
-            <input
-              id="profile-name"
-              className="field-control"
-              value={student.name}
-              readOnly
-            />
-          </div>
-
-          <div className="dashboard-field">
-            <label htmlFor="profile-email">Email address</label>
-            <input
-              id="profile-email"
-              className="field-control"
-              value={student.email}
-              readOnly
-            />
-          </div>
-
-          <div className="dashboard-field">
-            <label htmlFor="profile-institution">Institution</label>
-            <input
-              id="profile-institution"
-              className="field-control"
-              value={student.institution}
-              readOnly
-            />
-          </div>
-
-          <div className="dashboard-field">
-            <label htmlFor="profile-department">Department</label>
-            <input
-              id="profile-department"
-              className="field-control"
-              value={student.department}
-              readOnly
-            />
-          </div>
-        </div>
-      </section>
-    </>
-  );
-
-  const content: Record<Tab, () => ReactElement> = {
-    dashboard: renderDashboard,
-    vivas: renderVivas,
-    performance: renderPerformance,
-    history: renderHistory,
-    reviews: renderReviews,
-    profile: renderProfile,
-  };
-
-  /* -------------------------- Layout -------------------------- */
-
-  return (
-    <div className="dashboard">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        className="visually-hidden"
-        onChange={handlePhotoChange}
-        tabIndex={-1}
-        aria-hidden="true"
+      <SectionHeading
+        title="Review Requests"
+        subtitle="Ask a teacher to re-evaluate an answer and track the outcome here."
       />
 
-      <aside className="dashboard-sidebar">
-        <button
-          type="button"
-          className="dashboard-brand"
-          onClick={() => goTo("dashboard")}
-          aria-label="ELYSIAN dashboard"
-        >
-          <ElysianMark size={46} />
-          <span className="dashboard-brand-name">
-            ELYSIAN<span>.</span>
-          </span>
-        </button>
+      <div className="empty-state">
+        <h3>No review requests yet</h3>
+        <p>
+          Requesting a review of a viva result is coming soon. Your
+          requests and their outcomes will be listed on this page.
+        </p>
+      </div>
+    </>
+  );
 
-        <p className="sidebar-label">Workspace</p>
+  const content: Record<Exclude<Tab, "profile">, () => React.ReactElement> =
+    {
+      dashboard: renderDashboard,
+      vivas: renderVivas,
+      performance: renderPerformance,
+      history: renderHistory,
+      reviews: renderReviews,
+    };
 
-        <nav className="sidebar-nav" aria-label="Student navigation">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-
-            return (
-              <button
-                key={item.key}
-                type="button"
-                className={`sidebar-link ${
-                  tab === item.key ? "active" : ""
-                }`}
-                aria-current={tab === item.key ? "page" : undefined}
-                onClick={() => goTo(item.key)}
-              >
-                <Icon size={19} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="sidebar-bottom">
-          <button
-            type="button"
-            className="sidebar-link"
-            onClick={signOut}
-          >
-            <LogOut size={19} />
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      <main className="dashboard-main">
-        <div className="dashboard-inner">
-          <header className="dashboard-header">
-            <h2 className="dashboard-title">{titles[tab]}</h2>
-
-            <div className="profile-menu" ref={menuRef}>
-              <button
-                type="button"
-                className={`profile-trigger ${menuOpen ? "open" : ""}`}
-                aria-haspopup="dialog"
-                aria-expanded={menuOpen}
-                aria-label="Open student profile"
-                onClick={() => setMenuOpen((open) => !open)}
-              >
-                <Avatar
-                  photo={photo}
-                  initial={initial}
-                  className="avatar-sm"
-                />
-
-                <span className="profile-trigger-name">
-                  {student.name}
-                  <ChevronDown size={14} />
-                </span>
-
-                <small>
-                  {student.institutionShort} · {student.departmentShort}
-                </small>
-              </button>
-
-              {menuOpen && (
-                <div
-                  className="profile-popover"
-                  role="dialog"
-                  aria-label="Student profile"
-                >
-                  <div className="profile-popover-top">
-                    <div className="profile-photo-wrap">
-                      <Avatar
-                        photo={photo}
-                        initial={initial}
-                        className="avatar-md"
-                      />
-
-                      <button
-                        type="button"
-                        className="profile-photo-edit"
-                        aria-label="Change profile photo"
-                        onClick={openPhotoPicker}
-                      >
-                        <Camera size={14} />
-                      </button>
-                    </div>
-
-                    <strong>{student.name}</strong>
-
-                    <small>
-                      <Mail size={12} />
-                      {student.email}
-                    </small>
-
-                    <div className="profile-photo-actions">
-                      <button type="button" onClick={openPhotoPicker}>
-                        <Camera size={14} />
-                        {photo ? "Change photo" : "Upload photo"}
-                      </button>
-
-                      {photo && (
-                        <button
-                          type="button"
-                          className="muted"
-                          onClick={removePhoto}
-                        >
-                          <Trash2 size={14} />
-                          Remove
-                        </button>
-                      )}
-                    </div>
-
-                    {photoError && (
-                      <p className="profile-photo-error">{photoError}</p>
-                    )}
-                  </div>
-
-                  <dl className="profile-info">
-                    <div>
-                      <dt>Institution</dt>
-                      <dd>{student.institution}</dd>
-                    </div>
-
-                    <div>
-                      <dt>Department</dt>
-                      <dd>{student.department}</dd>
-                    </div>
-
-                    <div>
-                      <dt>Role</dt>
-                      <dd>Student</dd>
-                    </div>
-                  </dl>
-
-                  <div className="profile-popover-actions">
-                    <button
-                      type="button"
-                      className="profile-menu-item"
-                      onClick={() => goTo("profile")}
-                    >
-                      <User size={17} />
-                      View full profile
-                    </button>
-
-                    <button
-                      type="button"
-                      className="profile-menu-item danger"
-                      onClick={signOut}
-                    >
-                      <LogOut size={17} />
-                      Sign out
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </header>
-
-          {content[tab]()}
-        </div>
-      </main>
-    </div>
+  return (
+    <DashboardShell
+      portalLabel="Workspace"
+      navItems={navItems}
+      active={tab}
+      onNavigate={(key) => setTab(key as Tab)}
+      title={titles[tab]}
+      photoStorageKey="elysian.student.photo"
+      user={{
+        name: me.name,
+        email: me.email,
+        subtitle: `${me.institutionShort} · ${me.course || "Student"}`,
+        roleLabel: "Student",
+        details: [
+          { label: "Institution", value: me.institution },
+          { label: "Course", value: me.course },
+          { label: "Batch", value: me.batch },
+          { label: "Roll number", value: me.rollNo },
+        ],
+      }}
+    >
+      {tab !== "profile" &&
+        (firstLoad || error ? (
+          <StatusBlock
+            loading={firstLoad}
+            error={error}
+            onRetry={reloadAll}
+          />
+        ) : (
+          content[tab]()
+        ))}
+    </DashboardShell>
   );
 }

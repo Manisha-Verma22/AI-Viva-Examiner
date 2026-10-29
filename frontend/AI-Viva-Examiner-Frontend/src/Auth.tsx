@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,13 +13,13 @@ import {
 import { useNavigate, useParams } from "react-router-dom";
 
 import ElysianMark from "./ElysianMark";
-
-type Role = "student" | "teacher" | "admin";
-
-const institutionNames: Record<string, string> = {
-  "nit-sikkim": "National Institute of Technology Sikkim",
-  "demo-institution": "ELYSIAN Demo University",
-};
+import {
+  api,
+  ApiError,
+  dashboardPath,
+  saveSession,
+  type Role,
+} from "./api";
 
 const roleData = {
   student: {
@@ -55,36 +55,64 @@ export default function Auth({ role }: { role: Role }) {
   const data = roleData[role];
   const Icon = data.icon;
 
-  const institutionName =
-    institutionNames[institutionId ?? ""] ?? "Your Institution";
+  const institutionNumber = Number(institutionId);
 
+  const [institutionName, setInstitutionName] = useState("Your Institution");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (event: FormEvent) => {
+  /* Show the real institution name */
+  useEffect(() => {
+    if (!Number.isInteger(institutionNumber)) {
+      navigate(`/login/${role}`, { replace: true });
+      return;
+    }
+
+    api
+      .institutions()
+      .then((list) => {
+        const match = list.find((item) => item.id === institutionNumber);
+
+        if (match) setInstitutionName(match.name);
+      })
+      .catch(() => {
+        /* the name is only cosmetic; login still works */
+      });
+  }, [institutionNumber, navigate, role]);
+
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError("");
 
-    if (!email.trim() || !password.trim()) {
+    if (!email.trim() || !password) {
       setError("Please enter your email and password.");
       return;
     }
 
-    /*
-      Prototype authentication.
-      Later: React -> FastAPI -> Authentication ->
-      Institution-specific database
-    */
+    setSubmitting(true);
 
-    const destinations: Record<Role, string> = {
-      student: "/student",
-      teacher: "/teacher",
-      admin: "/admin",
-    };
+    try {
+      const result = await api.login({
+        email: email.trim(),
+        password,
+        institution_id: institutionNumber,
+        role,
+      });
 
-    navigate(destinations[role]);
+      saveSession(result.access_token, result.user);
+      navigate(dashboardPath(role), { replace: true });
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -153,7 +181,7 @@ export default function Auth({ role }: { role: Role }) {
             </button>
           </div>
 
-          <form className="auth-form" onSubmit={handleSubmit}>
+          <form className="auth-form" onSubmit={handleSubmit} noValidate>
             <label className="auth-field">
               <span>Email address</span>
 
@@ -178,7 +206,7 @@ export default function Auth({ role }: { role: Role }) {
                   type="button"
                   onClick={() =>
                     setError(
-                      "Password recovery will be available after backend authentication is connected.",
+                      "Password reset by email will be added soon. Please contact your institution administrator.",
                     )
                   }
                 >
@@ -192,9 +220,7 @@ export default function Auth({ role }: { role: Role }) {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(event) =>
-                    setPassword(event.target.value)
-                  }
+                  onChange={(event) => setPassword(event.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
                 />
@@ -202,9 +228,7 @@ export default function Auth({ role }: { role: Role }) {
                 <button
                   type="button"
                   className="password-toggle"
-                  onClick={() =>
-                    setShowPassword((current) => !current)
-                  }
+                  onClick={() => setShowPassword((current) => !current)}
                   aria-label={
                     showPassword ? "Hide password" : "Show password"
                   }
@@ -220,9 +244,13 @@ export default function Auth({ role }: { role: Role }) {
 
             {error && <div className="auth-error">{error}</div>}
 
-            <button className="auth-submit" type="submit">
-              Sign in
-              <ArrowRight size={18} />
+            <button
+              className="auth-submit"
+              type="submit"
+              disabled={submitting}
+            >
+              {submitting ? "Signing in…" : "Sign in"}
+              {!submitting && <ArrowRight size={18} />}
             </button>
           </form>
 

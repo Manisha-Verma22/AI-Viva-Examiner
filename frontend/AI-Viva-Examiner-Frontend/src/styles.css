@@ -6288,3 +6288,80 @@ a:focus-visible {
     justify-content: space-between;
   }
 }
+
+
+/* =========================================================
+   API LOADING / ERROR STATES
+========================================================= */
+
+.entry-page .institution-status {
+  margin: 0;
+  padding: 18px 14px;
+  border: 1px dashed var(--blue-300);
+  border-radius: 13px;
+  background: var(--blue-50);
+  color: var(--ink);
+  font-size: 14px;
+  text-align: center;
+}
+
+.entry-page .institution-status.error {
+  border-color: #f3b7b7;
+  background: #fff5f5;
+}
+
+.entry-page .institution-status p {
+  margin: 0 0 10px;
+}
+
+.institution-retry {
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid var(--blue-300);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.institution-retry:hover {
+  background: var(--blue-100);
+}
+
+.auth-page .auth-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
+/* =========================================================
+   DATA STATES (loading / error / hints)
+========================================================= */
+
+.empty-state.status-error {
+  border-color: #f3b7b7;
+  background: #fff5f5;
+}
+
+.empty-state.status-error .dashboard-continue {
+  margin-top: 14px;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 8px;
+  color: #3a4756;
+  font-size: 12.5px;
+}
+
+.dashboard-secondary.danger-text {
+  border-color: #f3caca;
+  color: #9b1c1c;
+}
+
+.dashboard-secondary.danger-text:hover:not(:disabled) {
+  background: #fff5f5;
+  border-color: #e9a3a3;
+}

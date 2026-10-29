@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -9,27 +10,7 @@ import {
 } from "lucide-react";
 
 import ElysianMark from "./ElysianMark";
-
-type Role = "student" | "teacher" | "admin";
-
-type Institution = {
-  id: string;
-  name: string;
-  location: string;
-};
-
-const institutions: Institution[] = [
-  {
-    id: "nit-sikkim",
-    name: "National Institute of Technology Sikkim",
-    location: "Ravangla, Sikkim",
-  },
-  {
-    id: "demo-institution",
-    name: "ELYSIAN Demo University",
-    location: "India",
-  },
-];
+import { api, ApiError, type Institution, type Role } from "./api";
 
 const roleData = {
   student: {
@@ -55,14 +36,35 @@ const roleData = {
   },
 };
 
-export default function InstitutionSelect({
-  role,
-}: {
-  role: Role;
-}) {
+export default function InstitutionSelect({ role }: { role: Role }) {
   const navigate = useNavigate();
   const data = roleData[role];
   const Icon = data.icon;
+
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError("");
+
+    api
+      .institutions()
+      .then(setInstitutions)
+      .catch((err: unknown) =>
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : "Could not load institutions.",
+        ),
+      )
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <main className="entry-page">
@@ -126,29 +128,51 @@ export default function InstitutionSelect({
             </div>
 
             <div className="institution-list">
-              {institutions.map((institution) => (
-                <button
-                  key={institution.id}
-                  type="button"
-                  className="institution-option"
-                  onClick={() =>
-                    navigate(`/auth/${role}/${institution.id}`)
-                  }
-                >
-                  <div className="institution-option-icon">
-                    <Building2 size={20} strokeWidth={1.8} />
-                  </div>
+              {loading && (
+                <p className="institution-status">
+                  Loading institutions…
+                </p>
+              )}
 
-                  <div className="institution-option-info">
-                    <h3>{institution.name}</h3>
-                    <p>{institution.location}</p>
-                  </div>
+              {error && (
+                <div className="institution-status error">
+                  <p>{error}</p>
 
-                  <div className="institution-option-arrow">
-                    <ArrowRight size={18} />
-                  </div>
-                </button>
-              ))}
+                  <button
+                    type="button"
+                    className="institution-retry"
+                    onClick={load}
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+
+              {!loading &&
+                !error &&
+                institutions.map((institution) => (
+                  <button
+                    key={institution.id}
+                    type="button"
+                    className="institution-option"
+                    onClick={() =>
+                      navigate(`/auth/${role}/${institution.id}`)
+                    }
+                  >
+                    <div className="institution-option-icon">
+                      <Building2 size={20} strokeWidth={1.8} />
+                    </div>
+
+                    <div className="institution-option-info">
+                      <h3>{institution.name}</h3>
+                      <p>{institution.location}</p>
+                    </div>
+
+                    <div className="institution-option-arrow">
+                      <ArrowRight size={18} />
+                    </div>
+                  </button>
+                ))}
             </div>
 
             <div className="institution-code">

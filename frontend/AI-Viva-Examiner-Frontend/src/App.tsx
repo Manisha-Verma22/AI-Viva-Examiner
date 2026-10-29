@@ -38,9 +38,10 @@ import AdminDashboard from "./AdminDashboard";
 import Welcome from "./Welcome";
 import InstitutionSelect from "./InstitutionSelect";
 import Auth from "./Auth";
-import Register from "./Register";
+import StudentRegister from "./StudentRegister";
 import TeacherRegister from "./TeacherRegister";
 import InstitutionRegister from "./InstitutionRegister";
+import RequireRole from "./RequireRole";
 
 function Logo() {
   return (
@@ -1203,7 +1204,7 @@ export default function App() {
 
         <Route
           path="/register"
-          element={<Register />}
+          element={<StudentRegister />}
         />
 
         {/* =========================
@@ -1233,7 +1234,9 @@ export default function App() {
         <Route
           path="/student"
           element={
-            <StudentDashboard />
+            <RequireRole role="student">
+              <StudentDashboard />
+            </RequireRole>
           }
         />
 
@@ -1244,7 +1247,9 @@ export default function App() {
         <Route
           path="/teacher"
           element={
-            <TeacherDashboard />
+            <RequireRole role="teacher">
+              <TeacherDashboard />
+            </RequireRole>
           }
         />
 
@@ -1255,7 +1260,9 @@ export default function App() {
         <Route
           path="/admin"
           element={
-            <AdminDashboard />
+            <RequireRole role="admin">
+              <AdminDashboard />
+            </RequireRole>
           }
         />
 

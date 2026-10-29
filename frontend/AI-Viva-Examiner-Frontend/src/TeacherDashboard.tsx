@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -27,6 +27,7 @@ import {
   ScoreBar,
   SectionHeading,
   StatCard,
+  StatusBlock,
   Toast,
   getGreeting,
   scoreStatus,
@@ -34,28 +35,27 @@ import {
   type Tone,
 } from "./dashboardKit";
 import {
-  batchSize,
+  api,
+  getUser,
+  messageOf,
+  shortName,
+  type MaterialRow,
+  type RecordDetail,
+  type ResultRow,
+  type StudentRow,
+  type Viva,
+} from "./api";
+import { useLoad } from "./useLoad";
+import {
   formatDate,
   formatLongDate,
   formatTime,
-  initialMaterials,
-  initialTeacherVivas,
   scheduleOptions,
-  teacherProfile,
-  teacherRecords,
-  teacherResults,
-  teacherStudents,
   todayISO,
-  type Material,
-  type ResultRow,
-  type Student,
-  type TeacherViva,
-  type VivaRecord,
-  type VivaStatus,
 } from "./mockData";
 
 /* ---------------------------------------------------------
-   Teacher dashboard (mock data - swap for API calls later)
+   Teacher dashboard - all data comes from the backend API
 --------------------------------------------------------- */
 
 type Tab =
@@ -89,27 +89,27 @@ const titles: Record<Tab, string> = {
   profile: "Profile & Settings",
 };
 
-const statusTone: Record<VivaStatus, Tone> = {
+const statusTone: Record<Viva["status"], Tone> = {
   Upcoming: "info",
   Scheduled: "neutral",
   Completed: "success",
+  Cancelled: "danger",
 };
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const FILE_PATTERN = /\.(pdf|doc|docx|txt)$/i;
 
 function formatSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
 
-function sortByWhen(a: TeacherViva, b: TeacherViva): number {
-  return `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`);
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /* ----------------------------- Table columns ----------------------------- */
 
-const studentColumns: Column<Student>[] = [
+const studentColumns: Column<StudentRow>[] = [
   {
     key: "student",
     header: "Student",
@@ -118,23 +118,25 @@ const studentColumns: Column<Student>[] = [
         <span className="avatar avatar-xs">{student.name.charAt(0)}</span>
         <div>
           <strong>{student.name}</strong>
-          <small>{student.roll}</small>
+          <small>{student.roll_no ?? student.email}</small>
         </div>
       </div>
     ),
   },
-  { key: "batch", header: "Batch", render: (student) => student.batch },
-  { key: "vivas", header: "Vivas", render: (student) => student.vivas },
+  { key: "batch", header: "Batch", render: (s) => s.batch ?? "—" },
+  { key: "vivas", header: "Vivas", render: (s) => s.vivas },
   {
     key: "score",
     header: "Avg score",
-    render: (student) => `${student.avgScore}%`,
+    render: (s) => (s.vivas ? `${s.avg_score}%` : "—"),
   },
   {
     key: "status",
     header: "Status",
-    render: (student) => {
-      const status = scoreStatus(student.avgScore);
+    render: (s) => {
+      if (!s.vivas) return <Badge tone="neutral">No vivas yet</Badge>;
+
+      const status = scoreStatus(s.avg_score);
       return <Badge tone={status.tone}>{status.label}</Badge>;
     },
   },
@@ -146,8 +148,8 @@ const resultColumns: Column<ResultRow>[] = [
     header: "Student",
     render: (row) => (
       <div className="person-cell">
-        <span className="avatar avatar-xs">{row.student.charAt(0)}</span>
-        <strong>{row.student}</strong>
+        <span className="avatar avatar-xs">{row.student_name.charAt(0)}</span>
+        <strong>{row.student_name}</strong>
       </div>
     ),
   },
@@ -175,16 +177,17 @@ type ScheduleValues = {
   date: string;
   time: string;
   duration: number;
-  material?: string;
-  materialSize?: string;
+  file: File | null;
 };
 
 function ScheduleForm({
   initial,
+  saving,
   onSubmit,
   onCancel,
 }: {
-  initial: TeacherViva | null;
+  initial: Viva | null;
+  saving: boolean;
   onSubmit: (values: ScheduleValues) => void;
   onCancel: () => void;
 }) {
@@ -204,14 +207,12 @@ function ScheduleForm({
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [time, setTime] = useState(initial?.time ?? "");
   const [duration, setDuration] = useState(
-    String(initial?.duration ?? 20),
+    String(initial?.duration_minutes ?? 20),
   );
-  const [file, setFile] = useState<{ name: string; size: string } | null>(
-    initial?.material ? { name: initial.material, size: "" } : null,
-  );
+  const [file, setFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
     const chosen = event.target.files?.[0];
     event.target.value = "";
 
@@ -238,7 +239,7 @@ function ScheduleForm({
       delete next.file;
       return next;
     });
-    setFile({ name: chosen.name, size: formatSize(chosen.size) });
+    setFile(chosen);
   };
 
   const handleSubmit = (event: FormEvent) => {
@@ -246,7 +247,7 @@ function ScheduleForm({
 
     const next: Record<string, string> = {};
 
-    if (!subject.trim()) next.subject = "Please enter the subject.";
+    if (subject.trim().length < 2) next.subject = "Please enter the subject.";
     if (!date) next.date = "Please choose a date.";
     else if (!initial && date < todayISO()) {
       next.date = "Choose today or a future date.";
@@ -266,8 +267,7 @@ function ScheduleForm({
       date,
       time,
       duration: Number(duration),
-      material: file?.name,
-      materialSize: file?.size || undefined,
+      file,
     });
   };
 
@@ -422,8 +422,8 @@ function ScheduleForm({
             <div className="uploaded-files">
               <div className="uploaded-file">
                 <span>
-                  <FileText size={15} /> {file.name}
-                  {file.size && ` · ${file.size}`}
+                  <FileText size={15} /> {file.name} ·{" "}
+                  {formatSize(file.size)}
                 </span>
 
                 <button
@@ -436,6 +436,13 @@ function ScheduleForm({
                 </button>
               </div>
             </div>
+          )}
+
+          {!file && initial?.material_name && (
+            <small className="field-hint">
+              Current material: {initial.material_name}. Upload a new file
+              to replace it.
+            </small>
           )}
 
           {errors.file && (
@@ -453,8 +460,16 @@ function ScheduleForm({
           Cancel
         </button>
 
-        <button type="submit" className="dashboard-continue">
-          {initial ? "Save changes" : "Schedule Viva"}
+        <button
+          type="submit"
+          className="dashboard-continue"
+          disabled={saving}
+        >
+          {saving
+            ? "Saving…"
+            : initial
+              ? "Save changes"
+              : "Schedule Viva"}
         </button>
       </div>
     </form>
@@ -464,20 +479,66 @@ function ScheduleForm({
 /* ----------------------------- Dashboard ----------------------------- */
 
 export default function TeacherDashboard() {
+  const session = getUser();
+
+  const me = {
+    name: session?.name ?? "Teacher",
+    email: session?.email ?? "",
+    institution: session?.institution_name ?? "",
+    institutionShort: session?.institution_short ?? "",
+    department: session?.department ?? "",
+    teacherCode: session?.teacher_code ?? "",
+  };
+
+  const vivasQuery = useLoad(() => api.teacher.vivas());
+  const studentsQuery = useLoad(() => api.teacher.students());
+  const resultsQuery = useLoad(() => api.teacher.results());
+  const materialsQuery = useLoad(() => api.teacher.materials());
+
+  const vivas = vivasQuery.data ?? [];
+  const students = studentsQuery.data ?? [];
+  const results = resultsQuery.data ?? [];
+  const materials = materialsQuery.data ?? [];
+
+  const loading =
+    vivasQuery.loading ||
+    studentsQuery.loading ||
+    resultsQuery.loading ||
+    materialsQuery.loading;
+
+  const error =
+    vivasQuery.error ||
+    studentsQuery.error ||
+    resultsQuery.error ||
+    materialsQuery.error;
+
+  const firstLoad =
+    loading &&
+    !vivasQuery.data &&
+    !studentsQuery.data &&
+    !resultsQuery.data &&
+    !materialsQuery.data;
+
+  const reloadAll = () => {
+    vivasQuery.reload();
+    studentsQuery.reload();
+    resultsQuery.reload();
+    materialsQuery.reload();
+  };
+
   const [tab, setTab] = useState<Tab>("dashboard");
-  const [vivas, setVivas] = useState<TeacherViva[]>(initialTeacherVivas);
-  const [materials, setMaterials] = useState<Material[]>(initialMaterials);
-  const [editing, setEditing] = useState<TeacherViva | null>(null);
-  const [selectedViva, setSelectedViva] = useState<TeacherViva | null>(null);
-  const [selectedRecord, setSelectedRecord] = useState<VivaRecord | null>(
+  const [editing, setEditing] = useState<Viva | null>(null);
+  const [selectedViva, setSelectedViva] = useState<Viva | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<RecordDetail | null>(
     null,
   );
-  const [vivaFilter, setVivaFilter] = useState<"All" | VivaStatus>("All");
+  const [vivaFilter, setVivaFilter] = useState<"All" | Viva["status"]>("All");
   const [batchFilter, setBatchFilter] = useState("All batches");
   const [subjectFilter, setSubjectFilter] = useState("All subjects");
   const [materialSubject, setMaterialSubject] = useState(
     scheduleOptions.subjects[0],
   );
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
 
   const materialInputRef = useRef<HTMLInputElement>(null);
@@ -491,72 +552,88 @@ export default function TeacherDashboard() {
   };
 
   /* Derived numbers */
-  const upcoming = vivas
-    .filter((viva) => viva.status !== "Completed")
-    .sort(sortByWhen);
-
-  const averageScore = Math.round(
-    teacherStudents.reduce((sum, student) => sum + student.avgScore, 0) /
-      teacherStudents.length,
+  const upcoming = vivas.filter(
+    (viva) => viva.status === "Upcoming" || viva.status === "Scheduled",
   );
 
-  const reviewCount = teacherResults.filter(
-    (result) => result.score < 65,
-  ).length;
+  const scored = students.filter((student) => student.vivas > 0);
+  const averageScore = scored.length
+    ? Math.round(
+        scored.reduce((sum, student) => sum + student.avg_score, 0) /
+          scored.length,
+      )
+    : null;
 
-  /* Actions */
-  const handleSchedule = (values: ScheduleValues) => {
-    const { materialSize, ...details } = values;
-    const status: VivaStatus =
-      details.date === todayISO() ? "Upcoming" : "Scheduled";
+  const reviewCount = results.filter((result) => result.score < 65).length;
 
-    if (editing) {
-      setVivas((current) =>
-        current.map((viva) =>
-          viva.id === editing.id
-            ? {
-                ...viva,
-                ...details,
-                material: details.material ?? viva.material,
-                status,
-              }
-            : viva,
-        ),
-      );
-      setToast("Viva updated.");
-    } else {
-      setVivas((current) => [
-        {
-          id: `v${Date.now()}`,
-          ...details,
-          students: batchSize(details.batch),
-          status,
-        },
-        ...current,
-      ]);
-      setToast("Viva scheduled successfully.");
+  /* ----------------------------- Actions ----------------------------- */
+
+  const handleSchedule = async (values: ScheduleValues) => {
+    setSaving(true);
+
+    try {
+      let materialId: number | null = null;
+
+      if (values.file) {
+        const material = await api.teacher.uploadMaterial(
+          values.file,
+          values.subject,
+        );
+        materialId = material.id;
+      }
+
+      const payload = {
+        subject: values.subject,
+        department: values.department,
+        course: values.course,
+        semester: values.semester,
+        batch: values.batch,
+        date: values.date,
+        time: values.time,
+        duration_minutes: values.duration,
+        material_id: materialId,
+      };
+
+      if (editing) {
+        await api.teacher.updateViva(editing.id, payload);
+        setToast("Viva updated.");
+      } else {
+        await api.teacher.createViva(payload);
+        setToast("Viva scheduled successfully.");
+      }
+
+      reloadAll();
+      setEditing(null);
+      setTab("vivas");
+    } catch (err) {
+      setToast(messageOf(err));
+    } finally {
+      setSaving(false);
     }
-
-    if (details.material && materialSize) {
-      setMaterials((current) => [
-        {
-          id: `m${Date.now()}`,
-          name: details.material as string,
-          subject: details.subject,
-          size: materialSize,
-          uploaded: formatDate(todayISO()),
-        },
-        ...current,
-      ]);
-    }
-
-    setEditing(null);
-    setTab("vivas");
   };
 
-  const handleMaterialUpload = (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleCancelViva = async (viva: Viva) => {
+    if (!window.confirm(`Cancel the ${viva.subject} viva?`)) return;
+
+    try {
+      await api.teacher.cancelViva(viva.id);
+      setToast("Viva cancelled.");
+      setSelectedViva(null);
+      vivasQuery.reload();
+    } catch (err) {
+      setToast(messageOf(err));
+    }
+  };
+
+  const openRecord = async (id: number) => {
+    try {
+      setSelectedRecord(await api.teacher.record(id));
+    } catch (err) {
+      setToast(messageOf(err));
+    }
+  };
+
+  const handleMaterialUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const chosen = event.target.files?.[0];
     event.target.value = "";
 
@@ -572,17 +649,23 @@ export default function TeacherDashboard() {
       return;
     }
 
-    setMaterials((current) => [
-      {
-        id: `m${Date.now()}`,
-        name: chosen.name,
-        subject: materialSubject,
-        size: formatSize(chosen.size),
-        uploaded: formatDate(todayISO()),
-      },
-      ...current,
-    ]);
-    setToast("Study material uploaded.");
+    try {
+      await api.teacher.uploadMaterial(chosen, materialSubject);
+      setToast("Study material uploaded.");
+      materialsQuery.reload();
+    } catch (err) {
+      setToast(messageOf(err));
+    }
+  };
+
+  const handleDeleteMaterial = async (material: MaterialRow) => {
+    try {
+      await api.teacher.deleteMaterial(material.id);
+      setToast("Study material removed.");
+      materialsQuery.reload();
+    } catch (err) {
+      setToast(messageOf(err));
+    }
   };
 
   /* ----------------------------- Sections ----------------------------- */
@@ -594,7 +677,7 @@ export default function TeacherDashboard() {
           <span className="welcome-tag">TEACHER PORTAL</span>
 
           <h1>
-            {getGreeting()}, {teacherProfile.short}
+            {getGreeting()}, {shortName(me.name)}
           </h1>
 
           <p>Run every viva with clarity.</p>
@@ -619,15 +702,11 @@ export default function TeacherDashboard() {
           label="Upcoming vivas"
           value={upcoming.length}
         />
-        <StatCard
-          icon={Users}
-          label="Students"
-          value={teacherStudents.length}
-        />
+        <StatCard icon={Users} label="Students" value={students.length} />
         <StatCard
           icon={Star}
           label="Average score"
-          value={`${averageScore}%`}
+          value={averageScore === null ? "—" : `${averageScore}%`}
         />
         <StatCard
           icon={ClipboardList}
@@ -701,11 +780,15 @@ export default function TeacherDashboard() {
                 <strong>{viva.subject}</strong>
                 <small>
                   {formatDate(viva.date)} · {viva.students} students ·{" "}
-                  {viva.duration} min
+                  {viva.duration_minutes} min
                 </small>
               </div>
             </div>
           ))}
+
+          {upcoming.length === 0 && (
+            <p className="section-sub">Nothing scheduled yet.</p>
+          )}
         </section>
       </div>
 
@@ -726,8 +809,9 @@ export default function TeacherDashboard() {
       <div className="dashboard-card table-card">
         <DataTable
           columns={resultColumns}
-          rows={teacherResults.slice(0, 5)}
-          rowKey={(row) => row.id}
+          rows={results.slice(0, 5)}
+          rowKey={(row) => String(row.id)}
+          emptyText="No viva results yet."
         />
       </div>
     </>
@@ -747,7 +831,8 @@ export default function TeacherDashboard() {
       <ScheduleForm
         key={editing?.id ?? "new"}
         initial={editing}
-        onSubmit={handleSchedule}
+        saving={saving}
+        onSubmit={(values) => void handleSchedule(values)}
         onCancel={() => {
           const wasEditing = Boolean(editing);
           setEditing(null);
@@ -758,9 +843,9 @@ export default function TeacherDashboard() {
   );
 
   const renderVivas = () => {
-    const filtered = vivas
-      .filter((viva) => vivaFilter === "All" || viva.status === vivaFilter)
-      .sort(sortByWhen);
+    const filtered = vivas.filter(
+      (viva) => vivaFilter === "All" || viva.status === vivaFilter,
+    );
 
     return (
       <>
@@ -819,9 +904,7 @@ export default function TeacherDashboard() {
                   <div className="card-icon">
                     <BookOpen size={20} />
                   </div>
-                  <Badge tone={statusTone[viva.status]}>
-                    {viva.status}
-                  </Badge>
+                  <Badge tone={statusTone[viva.status]}>{viva.status}</Badge>
                 </div>
 
                 <h3>{viva.subject}</h3>
@@ -850,10 +933,12 @@ export default function TeacherDashboard() {
   const renderStudents = () => {
     const batches = [
       "All batches",
-      ...Array.from(new Set(teacherStudents.map((s) => s.batch))),
+      ...Array.from(
+        new Set(students.map((s) => s.batch).filter((b): b is string => !!b)),
+      ),
     ];
 
-    const rows = teacherStudents.filter(
+    const rows = students.filter(
       (student) =>
         batchFilter === "All batches" || student.batch === batchFilter,
     );
@@ -861,12 +946,12 @@ export default function TeacherDashboard() {
     return (
       <DataSection
         title="Students"
-        subtitle="Students in the batches you teach."
+        subtitle="Students at your institution."
         columns={studentColumns}
         rows={rows}
-        rowKey={(student) => student.id}
+        rowKey={(student) => String(student.id)}
         searchText={(student) =>
-          `${student.name} ${student.roll} ${student.batch}`
+          `${student.name} ${student.roll_no ?? ""} ${student.batch ?? ""}`
         }
         searchPlaceholder="Search by name or roll number"
         toolbar={
@@ -888,10 +973,10 @@ export default function TeacherDashboard() {
   const renderResults = () => {
     const subjects = [
       "All subjects",
-      ...Array.from(new Set(teacherResults.map((r) => r.subject))),
+      ...Array.from(new Set(results.map((r) => r.subject))),
     ];
 
-    const rows = teacherResults.filter(
+    const rows = results.filter(
       (row) =>
         subjectFilter === "All subjects" || row.subject === subjectFilter,
     );
@@ -902,8 +987,8 @@ export default function TeacherDashboard() {
         subtitle="Scores from completed vivas. Under 65% is flagged for review."
         columns={resultColumns}
         rows={rows}
-        rowKey={(row) => row.id}
-        searchText={(row) => `${row.student} ${row.subject}`}
+        rowKey={(row) => String(row.id)}
+        searchText={(row) => `${row.student_name} ${row.subject}`}
         searchPlaceholder="Search by student or subject"
         toolbar={
           <select
@@ -921,7 +1006,7 @@ export default function TeacherDashboard() {
     );
   };
 
-  const renderRecordDetail = (record: VivaRecord) => (
+  const renderRecordDetail = (record: RecordDetail) => (
     <>
       <button
         type="button"
@@ -934,7 +1019,7 @@ export default function TeacherDashboard() {
 
       <section className="dashboard-card record-header">
         <div>
-          <h2>{record.student}</h2>
+          <h2>{record.student_name}</h2>
           <p>
             {record.subject} · {formatLongDate(record.date)} ·{" "}
             {record.duration}
@@ -946,7 +1031,7 @@ export default function TeacherDashboard() {
               className="dashboard-secondary"
               onClick={() =>
                 setToast(
-                  "Recording playback will be available once the AI pipeline is connected.",
+                  "Recording playback will be available once recordings are connected.",
                 )
               }
             >
@@ -958,7 +1043,7 @@ export default function TeacherDashboard() {
               className="dashboard-secondary"
               onClick={() =>
                 setToast(
-                  "Transcripts will be available once the AI pipeline is connected.",
+                  "Transcripts will be available once recordings are connected.",
                 )
               }
             >
@@ -994,11 +1079,11 @@ export default function TeacherDashboard() {
           </div>
 
           {record.questions.map((item, index) => (
-            <div className="qa-block" key={item.question}>
+            <div className="qa-block" key={`${index}-${item.question}`}>
               <div className="qa-top">
                 <span>Question {index + 1}</span>
                 <Badge tone="info">
-                  {item.score}/{item.max}
+                  {item.score}/{item.max_score}
                 </Badge>
               </div>
 
@@ -1016,30 +1101,17 @@ export default function TeacherDashboard() {
   const renderRecords = () => {
     if (selectedRecord) return renderRecordDetail(selectedRecord);
 
-    const columns: Column<VivaRecord>[] = [
-      {
-        key: "student",
-        header: "Student",
-        render: (record) => (
-          <div className="person-cell">
-            <span className="avatar avatar-xs">
-              {record.student.charAt(0)}
-            </span>
-            <strong>{record.student}</strong>
-          </div>
-        ),
-      },
-      { key: "subject", header: "Subject", render: (r) => r.subject },
-      { key: "date", header: "Date", render: (r) => formatDate(r.date) },
+    const columns: Column<ResultRow>[] = [
+      ...resultColumns.slice(0, 3),
       { key: "duration", header: "Duration", render: (r) => r.duration },
       {
         key: "score",
         header: "Overall",
         render: (r) => {
-          const status = scoreStatus(r.overall);
+          const status = scoreStatus(r.score);
           return (
             <Badge tone={status.tone}>
-              {r.overall}% · {status.label}
+              {r.score}% · {status.label}
             </Badge>
           );
         },
@@ -1049,19 +1121,19 @@ export default function TeacherDashboard() {
     return (
       <DataSection
         title="Viva Records"
-        subtitle="Open a record to see scores, answers, the recording and transcript."
+        subtitle="Open a record to see scores and every question and answer."
         columns={columns}
-        rows={teacherRecords}
-        rowKey={(record) => record.id}
-        searchText={(record) => `${record.student} ${record.subject}`}
+        rows={results}
+        rowKey={(row) => String(row.id)}
+        searchText={(row) => `${row.student_name} ${row.subject}`}
         searchPlaceholder="Search by student or subject"
-        onRowClick={setSelectedRecord}
+        onRowClick={(row) => void openRecord(row.id)}
       />
     );
   };
 
   const renderMaterials = () => {
-    const columns: Column<Material>[] = [
+    const columns: Column<MaterialRow>[] = [
       {
         key: "name",
         header: "File",
@@ -1072,13 +1144,17 @@ export default function TeacherDashboard() {
             </span>
             <div>
               <strong>{material.name}</strong>
-              <small>{material.size}</small>
+              <small>{formatSize(material.size_bytes)}</small>
             </div>
           </div>
         ),
       },
       { key: "subject", header: "Subject", render: (m) => m.subject },
-      { key: "uploaded", header: "Uploaded", render: (m) => m.uploaded },
+      {
+        key: "uploaded",
+        header: "Uploaded",
+        render: (m) => formatDate(m.uploaded_at.slice(0, 10)),
+      },
       {
         key: "remove",
         header: "",
@@ -1088,12 +1164,7 @@ export default function TeacherDashboard() {
             type="button"
             className="icon-button"
             aria-label={`Remove ${material.name}`}
-            onClick={() => {
-              setMaterials((current) =>
-                current.filter((item) => item.id !== material.id),
-              );
-              setToast("Study material removed.");
-            }}
+            onClick={() => void handleDeleteMaterial(material)}
           >
             <Trash2 size={16} />
           </button>
@@ -1137,7 +1208,7 @@ export default function TeacherDashboard() {
             type="file"
             accept=".pdf,.doc,.docx,.txt"
             className="visually-hidden"
-            onChange={handleMaterialUpload}
+            onChange={(event) => void handleMaterialUpload(event)}
             tabIndex={-1}
             aria-hidden="true"
           />
@@ -1147,7 +1218,7 @@ export default function TeacherDashboard() {
           <DataTable
             columns={columns}
             rows={materials}
-            rowKey={(material) => material.id}
+            rowKey={(material) => String(material.id)}
             emptyText="No study material uploaded yet."
           />
         </div>
@@ -1166,6 +1237,8 @@ export default function TeacherDashboard() {
       materials: renderMaterials,
     };
 
+  const showStatus = firstLoad || Boolean(error);
+
   return (
     <DashboardShell
       portalLabel="Teacher workspace"
@@ -1175,18 +1248,27 @@ export default function TeacherDashboard() {
       title={titles[tab]}
       photoStorageKey="elysian.teacher.photo"
       user={{
-        name: teacherProfile.name,
-        email: teacherProfile.email,
-        subtitle: `${teacherProfile.institutionShort} · ${teacherProfile.departmentShort}`,
+        name: me.name,
+        email: me.email,
+        subtitle: `${me.institutionShort} · Teacher`,
         roleLabel: "Teacher",
         details: [
-          { label: "Institution", value: teacherProfile.institution },
-          { label: "Department", value: teacherProfile.department },
-          { label: "Teacher ID", value: teacherProfile.teacherId },
+          { label: "Institution", value: me.institution },
+          { label: "Department", value: me.department },
+          { label: "Teacher ID", value: me.teacherCode },
         ],
       }}
     >
-      {tab !== "profile" && content[tab]()}
+      {tab !== "profile" &&
+        (showStatus ? (
+          <StatusBlock
+            loading={firstLoad}
+            error={error}
+            onRetry={reloadAll}
+          />
+        ) : (
+          content[tab]()
+        ))}
 
       {selectedViva && (
         <Modal
@@ -1210,7 +1292,7 @@ export default function TeacherDashboard() {
             </div>
             <div>
               <dt>Teacher</dt>
-              <dd>{teacherProfile.name}</dd>
+              <dd>{selectedViva.teacher_name}</dd>
             </div>
             <div>
               <dt>Date</dt>
@@ -1219,8 +1301,8 @@ export default function TeacherDashboard() {
             <div>
               <dt>Time</dt>
               <dd>
-                {formatTime(selectedViva.time)} · {selectedViva.duration}{" "}
-                minutes
+                {formatTime(selectedViva.time)} ·{" "}
+                {selectedViva.duration_minutes} minutes
               </dd>
             </div>
             <div>
@@ -1229,11 +1311,20 @@ export default function TeacherDashboard() {
             </div>
             <div>
               <dt>Study material</dt>
-              <dd>{selectedViva.material ?? "None uploaded"}</dd>
+              <dd>{selectedViva.material_name ?? "None uploaded"}</dd>
             </div>
           </dl>
 
           <div className="modal-actions">
+            <button
+              type="button"
+              className="dashboard-secondary danger-text"
+              disabled={selectedViva.status === "Completed"}
+              onClick={() => void handleCancelViva(selectedViva)}
+            >
+              Cancel Viva
+            </button>
+
             <button
               type="button"
               className="dashboard-secondary"
@@ -1245,14 +1336,6 @@ export default function TeacherDashboard() {
               }}
             >
               Edit Viva
-            </button>
-
-            <button
-              type="button"
-              className="dashboard-secondary"
-              onClick={() => goTo("students")}
-            >
-              View Students
             </button>
 
             <button

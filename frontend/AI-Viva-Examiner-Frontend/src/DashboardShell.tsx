@@ -18,6 +18,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import ElysianMark from "./ElysianMark";
+import { clearSession } from "./api";
 
 /* ---------------------------------------------------------
    Shared layout for the Teacher and Admin dashboards:
@@ -133,7 +134,10 @@ export default function DashboardShell({
     window.scrollTo({ top: 0 });
   };
 
-  const signOut = () => navigate("/");
+  const signOut = () => {
+    clearSession();
+    navigate("/");
+  };
   const openPhotoPicker = () => fileInputRef.current?.click();
 
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {

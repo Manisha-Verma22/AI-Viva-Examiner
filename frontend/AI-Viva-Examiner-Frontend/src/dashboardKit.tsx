@@ -335,3 +335,40 @@ export function Toast({
     </div>
   );
 }
+
+/* Shown while data is loading or when a request failed */
+export function StatusBlock({
+  loading,
+  error,
+  onRetry,
+}: {
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+}) {
+  if (error) {
+    return (
+      <div className="empty-state status-error">
+        <h3>We could not load this page</h3>
+        <p>{error}</p>
+        <button
+          type="button"
+          className="dashboard-continue compact"
+          onClick={onRetry}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <h3>Loading…</h3>
+      </div>
+    );
+  }
+
+  return null;
+}

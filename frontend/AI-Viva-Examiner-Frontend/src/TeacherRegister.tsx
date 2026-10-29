@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -13,16 +13,12 @@ import {
 } from "lucide-react";
 
 import ElysianMark from "./ElysianMark";
+import { api, ApiError, type Institution } from "./api";
 
 /* ---------------------------------------------------------
    Teacher registration (mock). On submit the request is
    "sent to the institution administrator for approval".
 --------------------------------------------------------- */
-
-const institutions = [
-  "National Institute of Technology Sikkim",
-  "ELYSIAN Demo University",
-];
 
 const departments = [
   "Computer Science & Engineering",
@@ -35,7 +31,7 @@ type Form = {
   name: string;
   email: string;
   password: string;
-  institution: string;
+  institutionId: string;
   department: string;
   teacherId: string;
 };
@@ -47,7 +43,7 @@ export default function TeacherRegister() {
     name: "",
     email: "",
     password: "",
-    institution: institutions[0],
+    institutionId: "",
     department: departments[0],
     teacherId: "",
   });
@@ -55,12 +51,39 @@ export default function TeacherRegister() {
     {},
   );
   const [submitted, setSubmitted] = useState(false);
+  const [institutions, setInstitutions] = useState<Institution[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState("");
+
+  useEffect(() => {
+    api
+      .institutions()
+      .then((list) => {
+        setInstitutions(list);
+
+        if (list.length > 0) {
+          setForm((current) =>
+            current.institutionId
+              ? current
+              : { ...current, institutionId: String(list[0].id) },
+          );
+        }
+      })
+      .catch((err: unknown) =>
+        setServerError(
+          err instanceof ApiError
+            ? err.message
+            : "Could not load institutions.",
+        ),
+      );
+  }, []);
 
   const update = (key: keyof Form, value: string) =>
     setForm((current) => ({ ...current, [key]: value }));
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    setServerError("");
 
     const next: Partial<Record<keyof Form, string>> = {};
 
@@ -84,11 +107,33 @@ export default function TeacherRegister() {
 
     if (Object.keys(next).length > 0) return;
 
-    /*
-      Prototype only. Later this will call the API, which stores
-      the request in the institution's database as "pending".
-    */
-    setSubmitted(true);
+    if (!form.institutionId) {
+      setServerError("Please choose your institution.");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      await api.registerTeacher({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        institution_id: Number(form.institutionId),
+        department: form.department,
+        teacher_code: form.teacherId.trim(),
+      });
+
+      setSubmitted(true);
+    } catch (err) {
+      setServerError(
+        err instanceof ApiError
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -240,13 +285,15 @@ export default function TeacherRegister() {
                     <div className="auth-input">
                       <Building2 size={18} />
                       <select
-                        value={form.institution}
+                        value={form.institutionId}
                         onChange={(event) =>
-                          update("institution", event.target.value)
+                          update("institutionId", event.target.value)
                         }
                       >
                         {institutions.map((option) => (
-                          <option key={option}>{option}</option>
+                          <option key={option.id} value={option.id}>
+                            {option.name}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -289,9 +336,17 @@ export default function TeacherRegister() {
                   </label>
                 </div>
 
-                <button className="auth-submit" type="submit">
-                  Create account
-                  <ArrowRight size={18} />
+                {serverError && (
+                  <div className="auth-error">{serverError}</div>
+                )}
+
+                <button
+                  className="auth-submit"
+                  type="submit"
+                  disabled={submitting}
+                >
+                  {submitting ? "Submitting…" : "Create account"}
+                  {!submitting && <ArrowRight size={18} />}
                 </button>
               </form>
 
